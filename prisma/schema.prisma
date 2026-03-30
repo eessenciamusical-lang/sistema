@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MUSICIAN
+}
+
+enum AssignmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum ContractStatus {
+  DRAFT
+  SENT
+  SIGNED
+  CANCELLED
+}
+
+enum PaymentDirection {
+  RECEIVABLE
+  PAYABLE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  role         Role
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  musicianProfile MusicianProfile?
+}
+
+model MusicianProfile {
+  id         String  @id @default(cuid())
+  userId     String  @unique
+  phone      String?
+  instrument String?
+  bio        String?
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments Assignment[]
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events Event[]
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  message   String?
+  createdAt DateTime @default(now())
+}
+
+model Event {
+  id           String   @id @default(cuid())
+  title        String
+  date         DateTime
+  locationName String?
+  address      String?
+  city         String?
+  state        String?
+  mapUrl       String?
+  notes        String?
+  timeline     String?
+  repertoire   String?
+
+  clientId  String?
+  client    Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contract  Contract?
+  payments  Payment[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  assignments Assignment[]
+}
+
+model Assignment {
+  id        String           @id @default(cuid())
+  eventId   String
+  musicianId String
+  status    AssignmentStatus @default(CONFIRMED)
+  roleName  String?
+  callTime  DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @default(now()) @updatedAt
+
+  event    Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  musician MusicianProfile @relation(fields: [musicianId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, musicianId])
+}
+
+model Contract {
+  id          String         @id @default(cuid())
+  eventId     String         @unique
+  totalAmount Int
+  status      ContractStatus @default(DRAFT)
+  terms       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id        String          @id @default(cuid())
+  eventId   String
+  direction PaymentDirection
+  amount    Int
+  status    PaymentStatus   @default(PENDING)
+  dueDate   DateTime?
+  paidAt    DateTime?
+  note      String?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
