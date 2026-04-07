@@ -69,7 +69,7 @@ export async function syncContractFinance(contractId: string) {
         await prisma.payment.update({
           where: { id: existingId },
           data: {
-            amount: a.costCents,
+            amount: a.costCents ?? 0,
             type: 'MUSICIAN_PAYABLE',
             direction: 'PAYABLE',
             dueDate: contract.event.date,
@@ -85,7 +85,7 @@ export async function syncContractFinance(contractId: string) {
           assignmentId: a.id,
           type: 'MUSICIAN_PAYABLE',
           direction: 'PAYABLE',
-          amount: a.costCents,
+          amount: a.costCents ?? 0,
           status: 'PENDING',
           dueDate: contract.event.date,
           note: `Cachê: ${a.musician.user.name}`,
