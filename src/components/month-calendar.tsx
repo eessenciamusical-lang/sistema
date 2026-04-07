@@ -24,6 +24,80 @@ type TaskReminder = {
   completed: boolean
 }
 
+const LOCAL_TASKS_KEY = 'casamento_tasks_v1'
+
+function safeParseJson(raw: string) {
+  try {
+    return JSON.parse(raw) as unknown
+  } catch {
+    return null
+  }
+}
+
+function loadLocalTasks() {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(LOCAL_TASKS_KEY)
+    if (!raw) return []
+    const data = safeParseJson(raw)
+    if (!Array.isArray(data)) return []
+    const list: TaskReminder[] = []
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const t = item as Partial<TaskReminder>
+      if (typeof t.id !== 'string') continue
+      if (typeof t.title !== 'string') continue
+      if (typeof t.startAt !== 'string') continue
+      if (typeof t.durationMin !== 'number') continue
+      if (typeof t.color !== 'string') continue
+      if (typeof t.completed !== 'boolean') continue
+      const description = t.description == null ? null : typeof t.description === 'string' ? t.description : null
+      list.push({
+        id: t.id,
+        title: t.title,
+        description,
+        startAt: t.startAt,
+        durationMin: t.durationMin,
+        color: t.color,
+        completed: t.completed,
+      })
+    }
+    list.sort((a, b) => a.startAt.localeCompare(b.startAt))
+    return list
+  } catch {
+    return []
+  }
+}
+
+function saveLocalTasks(list: TaskReminder[]) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(LOCAL_TASKS_KEY, JSON.stringify(list))
+  } catch {}
+}
+
+function dateKeyFromISOStartAt(startAt: string) {
+  const d = new Date(startAt)
+  if (Number.isNaN(d.getTime())) return null
+  return dateKeyLocal(d)
+}
+
+function tasksForDayLocal(dayKey: string) {
+  const all = loadLocalTasks()
+  return all.filter((t) => dateKeyFromISOStartAt(t.startAt) === dayKey)
+}
+
+function isSlotConflictLocal(all: TaskReminder[], startAt: string, excludeId?: string) {
+  return all.some((t) => t.startAt === startAt && (excludeId ? t.id !== excludeId : true))
+}
+
+function newLocalTaskId() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return `local_${crypto.randomUUID()}`
+  } catch {}
+  return `local_${Math.random().toString(36).slice(2)}`
+}
+
 function toMonthLabel(monthISO: string) {
   const [y, m] = monthISO.split('-').map((x) => Number(x))
   const d = new Date(y, (m ?? 1) - 1, 1)
@@ -127,6 +201,7 @@ export function MonthCalendar({
   const [tasks, setTasks] = useState<TaskReminder[]>([])
   const [tasksLoading, setTasksLoading] = useState(false)
   const [tasksError, setTasksError] = useState<string | null>(null)
+  const [localMode, setLocalMode] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create')
   const [editorTaskId, setEditorTaskId] = useState<string | null>(null)
@@ -135,6 +210,19 @@ export function MonthCalendar({
   const [editorDescription, setEditorDescription] = useState<string>('')
   const [editorColor, setEditorColor] = useState<string>('blue')
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/health/db')
+      .then(async (r) => {
+        if (!r.ok) {
+          setLocalMode(true)
+          return
+        }
+        const data = await r.json().catch(() => null)
+        if (!data?.ok) setLocalMode(true)
+      })
+      .catch(() => setLocalMode(true))
+  }, [])
 
   const byDay = useMemo(() => {
     const map: Record<string, MonthCalendarEvent[]> = {}
@@ -166,6 +254,18 @@ export function MonthCalendar({
     return list
   }, [monthISO])
 
+  const localTasksCountByDay = useMemo(() => {
+    if (!localMode) return {}
+    const all = loadLocalTasks()
+    const map: Record<string, number> = {}
+    for (const t of all) {
+      const key = dateKeyFromISOStartAt(t.startAt)
+      if (!key) continue
+      map[key] = (map[key] ?? 0) + 1
+    }
+    return map
+  }, [localMode])
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
@@ -191,16 +291,27 @@ export function MonthCalendar({
     setEditorOpen(false)
     setDraggingTaskId(null)
     setTasksLoading(true)
+    if (localMode) {
+      setTasks(tasksForDayLocal(selectedDayKey))
+      setTasksLoading(false)
+      return
+    }
     fetch(`/api/tasks?day=${encodeURIComponent(selectedDayKey)}`)
       .then(async (r) => {
-        if (!r.ok) throw new Error(String(r.status))
+        if (!r.ok) {
+          if (r.status >= 500) throw new Error(String(r.status))
+          throw new Error(String(r.status))
+        }
         const data = await r.json()
         const list = Array.isArray(data?.tasks) ? (data.tasks as TaskReminder[]) : []
         setTasks(list)
       })
-      .catch(() => setTasksError('Não foi possível carregar as tarefas deste dia.'))
+      .catch(() => {
+        setLocalMode(true)
+        setTasks(tasksForDayLocal(selectedDayKey))
+      })
       .finally(() => setTasksLoading(false))
-  }, [selectedDayKey])
+  }, [selectedDayKey, localMode])
 
   const tasksByStartAt = useMemo(() => {
     const map = new Map<string, TaskReminder>()
@@ -220,6 +331,11 @@ export function MonthCalendar({
   async function refreshTasks(dayKey: string) {
     setTasksLoading(true)
     setTasksError(null)
+    if (localMode) {
+      setTasks(tasksForDayLocal(dayKey))
+      setTasksLoading(false)
+      return
+    }
     try {
       const r = await fetch(`/api/tasks?day=${encodeURIComponent(dayKey)}`)
       if (!r.ok) throw new Error(String(r.status))
@@ -227,7 +343,8 @@ export function MonthCalendar({
       const list = Array.isArray(data?.tasks) ? (data.tasks as TaskReminder[]) : []
       setTasks(list)
     } catch {
-      setTasksError('Não foi possível carregar as tarefas deste dia.')
+      setLocalMode(true)
+      setTasks(tasksForDayLocal(dayKey))
     } finally {
       setTasksLoading(false)
     }
@@ -253,7 +370,52 @@ export function MonthCalendar({
     setEditorOpen(true)
   }
 
-  async function saveEditor(dayKey: string) {
+  async function saveEditor(dayKey: string, forceLocal = false) {
+    if (forceLocal || localMode) {
+      const title = editorTitle.trim()
+      if (!title) {
+        setTasksError('Não foi possível salvar a tarefa. Verifique os campos.')
+        return
+      }
+      const startAt = editorStartAt
+      const all = loadLocalTasks()
+      if (editorMode === 'create') {
+        if (isSlotConflictLocal(all, startAt)) {
+          setTasksError('Já existe uma tarefa neste horário. Escolha outro intervalo.')
+          return
+        }
+        const t: TaskReminder = {
+          id: newLocalTaskId(),
+          title,
+          description: editorDescription.trim() || null,
+          startAt,
+          durationMin: 30,
+          color: editorColor,
+          completed: false,
+        }
+        saveLocalTasks([...all, t])
+      } else if (editorTaskId) {
+        const existing = all.find((x) => x.id === editorTaskId)
+        if (!existing) {
+          setTasksError('Não foi possível salvar a tarefa.')
+          return
+        }
+        if (isSlotConflictLocal(all, startAt, editorTaskId)) {
+          setTasksError('Já existe uma tarefa neste horário. Escolha outro intervalo.')
+          return
+        }
+        const next = all.map((x) =>
+          x.id === editorTaskId
+            ? { ...x, title, description: editorDescription.trim() || null, startAt, color: editorColor }
+            : x,
+        )
+        saveLocalTasks(next)
+      }
+      setEditorOpen(false)
+      await refreshTasks(dayKey)
+      return
+    }
+
     const payload =
       editorMode === 'create'
         ? { title: editorTitle, description: editorDescription || null, startAt: editorStartAt, color: editorColor }
@@ -273,17 +435,32 @@ export function MonthCalendar({
         return
       }
       if (!r.ok) {
+        if (r.status >= 500) {
+          setLocalMode(true)
+          setTasksError(null)
+          await saveEditor(dayKey, true)
+          return
+        }
         setTasksError('Não foi possível salvar a tarefa. Verifique os campos.')
         return
       }
       setEditorOpen(false)
       await refreshTasks(dayKey)
     } catch {
-      setTasksError('Não foi possível salvar a tarefa.')
+      setLocalMode(true)
+      setTasksError(null)
+      await saveEditor(dayKey, true)
     }
   }
 
-  async function toggleCompleted(dayKey: string, t: TaskReminder) {
+  async function toggleCompleted(dayKey: string, t: TaskReminder, forceLocal = false) {
+    if (forceLocal || localMode) {
+      const all = loadLocalTasks()
+      const next = all.map((x) => (x.id === t.id ? { ...x, completed: !x.completed } : x))
+      saveLocalTasks(next)
+      await refreshTasks(dayKey)
+      return
+    }
     setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, completed: !x.completed } : x)))
     try {
       const r = await fetch(`/api/tasks/${t.id}`, {
@@ -291,27 +468,61 @@ export function MonthCalendar({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ completed: !t.completed }),
       })
-      if (!r.ok) await refreshTasks(dayKey)
+      if (!r.ok) {
+        if (r.status >= 500) {
+          setLocalMode(true)
+          await toggleCompleted(dayKey, t, true)
+          return
+        }
+        await refreshTasks(dayKey)
+      }
     } catch {
-      await refreshTasks(dayKey)
+      setLocalMode(true)
+      await toggleCompleted(dayKey, t, true)
     }
   }
 
-  async function removeTask(dayKey: string, id: string) {
+  async function removeTask(dayKey: string, id: string, forceLocal = false) {
+    if (forceLocal || localMode) {
+      const all = loadLocalTasks()
+      saveLocalTasks(all.filter((x) => x.id !== id))
+      setEditorOpen(false)
+      await refreshTasks(dayKey)
+      return
+    }
     try {
       const r = await fetch(`/api/tasks/${id}`, { method: 'DELETE' })
       if (!r.ok) {
+        if (r.status >= 500) {
+          setLocalMode(true)
+          setTasksError(null)
+          await removeTask(dayKey, id, true)
+          return
+        }
         setTasksError('Não foi possível excluir a tarefa.')
         return
       }
       setEditorOpen(false)
       await refreshTasks(dayKey)
     } catch {
-      setTasksError('Não foi possível excluir a tarefa.')
+      setLocalMode(true)
+      setTasksError(null)
+      await removeTask(dayKey, id, true)
     }
   }
 
-  async function moveTask(dayKey: string, id: string, startAt: string) {
+  async function moveTask(dayKey: string, id: string, startAt: string, forceLocal = false) {
+    if (forceLocal || localMode) {
+      const all = loadLocalTasks()
+      if (isSlotConflictLocal(all, startAt, id)) {
+        setTasksError('Este horário já está ocupado.')
+        return
+      }
+      const next = all.map((x) => (x.id === id ? { ...x, startAt } : x))
+      saveLocalTasks(next)
+      await refreshTasks(dayKey)
+      return
+    }
     try {
       const r = await fetch(`/api/tasks/${id}`, {
         method: 'PATCH',
@@ -323,12 +534,20 @@ export function MonthCalendar({
         return
       }
       if (!r.ok) {
+        if (r.status >= 500) {
+          setLocalMode(true)
+          setTasksError(null)
+          await moveTask(dayKey, id, startAt, true)
+          return
+        }
         setTasksError('Não foi possível mover a tarefa.')
         return
       }
       await refreshTasks(dayKey)
     } catch {
-      setTasksError('Não foi possível mover a tarefa.')
+      setLocalMode(true)
+      setTasksError(null)
+      await moveTask(dayKey, id, startAt, true)
     }
   }
 
@@ -396,7 +615,7 @@ export function MonthCalendar({
         {days.map((d) => {
           const dayEvents = byDay[d.key] ?? []
           const isToday = d.key === todayKey
-          const taskCount = tasksCountByDay?.[d.key] ?? 0
+          const taskCount = localMode ? localTasksCountByDay[d.key] ?? 0 : tasksCountByDay?.[d.key] ?? 0
           return (
             <button
               key={d.key}

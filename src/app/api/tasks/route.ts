@@ -1,5 +1,7 @@
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { isDbAvailable } from '@/lib/db-availability'
+import { demoTaskCreate, demoTasksForDay } from '@/lib/demo-task-store'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
@@ -31,6 +33,12 @@ export async function GET(req: Request) {
   if (!start) return new Response('Bad request', { status: 400 })
   const end = new Date(start)
   end.setDate(end.getDate() + 1)
+
+  const dbOk = await isDbAvailable()
+  if (!dbOk) {
+    const tasks = demoTasksForDay(session.user.id, start, end)
+    return Response.json({ tasks })
+  }
 
   const tasks = await prisma.taskReminder.findMany({
     where: { userId: session.user.id, startAt: { gte: start, lt: end } },
@@ -64,6 +72,22 @@ export async function POST(req: Request) {
   endOfDay.setDate(endOfDay.getDate() + 1)
   if (startAt < startOfDay || startAt >= endOfDay) return new Response('Bad request', { status: 400 })
 
+  const dbOk = await isDbAvailable()
+  if (!dbOk) {
+    const created = demoTaskCreate({
+      userId: session.user.id,
+      title: parsed.data.title.trim(),
+      description: parsed.data.description?.trim() || null,
+      startAt: startAt.toISOString(),
+      durationMin: 30,
+      color: parsed.data.color ?? 'blue',
+      completed: false,
+    })
+    if (!created.ok && created.conflict) return new Response('Conflict', { status: 409 })
+    if (!created.ok) return new Response('Bad request', { status: 400 })
+    return Response.json({ task: created.task })
+  }
+
   const existing = await prisma.taskReminder.findUnique({
     where: { userId_startAt: { userId: session.user.id, startAt } },
     select: { id: true },
@@ -83,4 +107,3 @@ export async function POST(req: Request) {
 
   return Response.json({ task })
 }
-
