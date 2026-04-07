@@ -54,7 +54,7 @@ export default async function AdminContractDetailPage({ params }: Props) {
       data: {
         totalAmount: cents,
         status: parsed.data.status,
-        terms: parsed.data.terms || null,
+        terms: parsed.data.terms || '',
         signedAt: parsed.data.status === 'SIGNED' && existing?.signedAt == null ? new Date() : existing?.signedAt ?? null,
       },
     })
