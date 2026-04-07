@@ -1,4 +1,5 @@
 import NextAuth from 'next-auth'
+import type { Session } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
@@ -58,8 +59,7 @@ const next = NextAuth({
 
 export const { handlers, signIn, signOut } = next
 
-export const auth: typeof next.auth = async (..._args) => {
-  void _args
+export const auth = async (): Promise<Session> => {
   try {
     await prisma.user.upsert({
       where: { login: 'public' },
@@ -67,5 +67,13 @@ export const auth: typeof next.auth = async (..._args) => {
       create: { login: 'public', email: null, name: 'Público', role: 'ADMIN', passwordHash: await bcrypt.hash(`public-${Date.now()}`, 10) },
     })
   } catch {}
-  return ({ user: { id: 'public', role: 'ADMIN' } } as unknown) as Awaited<ReturnType<typeof next.auth>>
+  return {
+    user: {
+      id: 'public',
+      role: 'ADMIN',
+      name: 'Público',
+      email: 'public@local',
+    },
+    expires: '2099-01-01T00:00:00.000Z',
+  }
 }
