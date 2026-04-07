@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db'
+import { isDbAvailable } from '@/lib/db-availability'
+import { demoContracts, demoEvents } from '@/lib/demo-data'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
 import { contractStatusLabel } from '@/lib/labels'
 import { syncContractFinance } from '@/lib/finance-sync'
@@ -10,6 +12,9 @@ type Props = {
   params: Promise<{ id: string }>
 }
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 function parseBRLToCents(value: string) {
   const cleaned = value.trim().replace(/[^\d,.-]/g, '')
   const normalized = cleaned.includes(',') ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned
@@ -20,10 +25,35 @@ function parseBRLToCents(value: string) {
 
 export default async function AdminContractDetailPage({ params }: Props) {
   const { id } = await params
-  const contract = await prisma.contract.findUnique({
-    where: { id },
-    include: { event: { include: { client: true, assignments: { include: { musician: { include: { user: true } } } } } } },
-  })
+  const dbOk = await isDbAvailable()
+
+  const contract = !dbOk
+    ? (() => {
+        const c = demoContracts().find((x) => x.id === id)
+        if (!c) return null
+        const ev = demoEvents().find((e) => e.id === c.eventId)
+        return {
+          id: c.id,
+          status: c.status,
+          totalAmount: c.totalAmount,
+          terms: '',
+          event: {
+            title: ev?.title ?? c.eventTitle,
+            date: ev?.date ?? new Date(),
+            client: ev?.clientName ? { name: ev.clientName } : null,
+            assignments: [] as Array<{
+              id: string
+              roleName: string | null
+              costCents: number | null
+              musician: { instrument: string | null; user: { name: string } }
+            }>,
+          },
+        }
+      })()
+    : await prisma.contract.findUnique({
+        where: { id },
+        include: { event: { include: { client: true, assignments: { include: { musician: { include: { user: true } } } } } } },
+      })
 
   if (!contract) redirect('/admin/contracts')
 
@@ -85,48 +115,69 @@ export default async function AdminContractDetailPage({ params }: Props) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-5 lg:col-span-2">
-          <h2 className="text-lg font-semibold">Editar</h2>
-          <form action={updateAction} className="mt-4 grid gap-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+        {dbOk ? (
+          <section className="rounded-2xl border border-white/10 bg-white/5 p-5 lg:col-span-2">
+            <h2 className="text-lg font-semibold">Editar</h2>
+            <form action={updateAction} className="mt-4 grid gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2">
+                  <span className="text-sm text-zinc-200">Total (R$)</span>
+                  <input
+                    name="total"
+                    defaultValue={(contract.totalAmount / 100).toFixed(2).replace('.', ',')}
+                    className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm text-zinc-200">Status</span>
+                  <select
+                    name="status"
+                    defaultValue={contract.status}
+                    className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
+                  >
+                    <option value="DRAFT">Rascunho</option>
+                    <option value="SENT">Enviado</option>
+                    <option value="SIGNED">Assinado</option>
+                    <option value="CANCELLED">Cancelado</option>
+                  </select>
+                </label>
+              </div>
+
               <label className="grid gap-2">
-                <span className="text-sm text-zinc-200">Total (R$)</span>
-                <input
-                  name="total"
-                  defaultValue={(contract.totalAmount / 100).toFixed(2).replace('.', ',')}
-                  className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
+                <span className="text-sm text-zinc-200">Cláusulas / termos</span>
+                <textarea
+                  name="terms"
+                  rows={10}
+                  defaultValue={contract.terms ?? ''}
+                  className="rounded-xl bg-white/5 px-4 py-3 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
                 />
               </label>
-              <label className="grid gap-2">
-                <span className="text-sm text-zinc-200">Status</span>
-                <select
-                  name="status"
-                  defaultValue={contract.status}
-                  className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
-                >
-                  <option value="DRAFT">Rascunho</option>
-                  <option value="SENT">Enviado</option>
-                  <option value="SIGNED">Assinado</option>
-                  <option value="CANCELLED">Cancelado</option>
-                </select>
-              </label>
+
+              <button className="h-11 rounded-xl bg-amber-300 px-5 font-medium text-zinc-950 hover:bg-amber-200">
+                Salvar
+              </button>
+            </form>
+          </section>
+        ) : (
+          <section className="rounded-2xl border border-white/10 bg-white/5 p-5 lg:col-span-2">
+            <h2 className="text-lg font-semibold">Detalhes</h2>
+            <div className="mt-2 text-sm text-zinc-300">Este contrato está em modo demo (sem banco). Edição e PDF ficam indisponíveis.</div>
+            <div className="mt-4 grid gap-2 text-sm text-zinc-200">
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-black/20 p-4">
+                <span className="text-zinc-400">Total</span>
+                <span className="font-semibold">{formatCurrencyBRL(contract.totalAmount)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-black/20 p-4">
+                <span className="text-zinc-400">Status</span>
+                <span className="font-semibold">{contractStatusLabel(contract.status)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-black/20 p-4">
+                <span className="text-zinc-400">Cliente</span>
+                <span className="font-semibold">{contract.event.client?.name ?? '—'}</span>
+              </div>
             </div>
-
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-200">Cláusulas / termos</span>
-              <textarea
-                name="terms"
-                rows={10}
-                defaultValue={contract.terms ?? ''}
-                className="rounded-xl bg-white/5 px-4 py-3 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
-              />
-            </label>
-
-            <button className="h-11 rounded-xl bg-amber-300 px-5 font-medium text-zinc-950 hover:bg-amber-200">
-              Salvar
-            </button>
-          </form>
-        </section>
+          </section>
+        )}
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold">Custo da banda</h2>
@@ -180,14 +231,16 @@ export default async function AdminContractDetailPage({ params }: Props) {
             <h2 className="text-lg font-semibold">PDF</h2>
             <p className="mt-2 text-sm text-zinc-300">Gere o PDF do contrato para enviar ao cliente.</p>
             <div className="mt-4 grid gap-2">
-              <a
-                className="inline-flex h-11 items-center justify-center rounded-xl bg-white/5 px-5 text-sm font-medium hover:bg-white/10"
-                href={`/api/contracts/${contract.id}/pdf`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Abrir PDF
-              </a>
+              {dbOk ? (
+                <a
+                  className="inline-flex h-11 items-center justify-center rounded-xl bg-white/5 px-5 text-sm font-medium hover:bg-white/10"
+                  href={`/api/contracts/${contract.id}/pdf`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Abrir PDF
+                </a>
+              ) : null}
             </div>
           </div>
         </section>
