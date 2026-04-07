@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db'
+import { isDbAvailable } from '@/lib/db-availability'
+import { demoContracts, demoEvents, demoPayments } from '@/lib/demo-data'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
 import Link from 'next/link'
 
@@ -33,58 +35,83 @@ export default async function AdminDrePage({ searchParams }: PageProps) {
   const fromDate = parseDateOnly(fromRaw)
   const toDate = parseDateOnly(toRaw)
 
-  const contracts = await prisma.contract.findMany({
-    where: {
-      status: 'SIGNED',
-      ...(fromDate || toDate
-        ? {
-            event: {
-              date: {
-                ...(fromDate ? { gte: toStartOfDay(fromDate) } : {}),
-                ...(toDate ? { lte: toEndOfDay(toDate) } : {}),
+  const dbOk = await isDbAvailable()
+
+  let rows: Array<{ contractId: string; eventDate: Date; eventTitle: string; receivedCents: number; bandCostCents: number; profitCents: number }> = []
+
+  if (!dbOk) {
+    const contracts = demoContracts()
+    const events = demoEvents()
+    const payments = demoPayments()
+    const receivedTotal = payments.filter((p) => p.direction === 'RECEIVABLE').reduce((sum, p) => sum + p.amount, 0)
+    const costTotal = payments.filter((p) => p.direction === 'PAYABLE').reduce((sum, p) => sum + p.amount, 0)
+    rows = contracts.map((c) => {
+      const ev = events.find((e) => e.id === c.eventId)
+      const receivedCents = receivedTotal
+      const bandCostCents = costTotal
+      return {
+        contractId: c.id,
+        eventDate: ev?.date ?? new Date(),
+        eventTitle: ev?.title ?? c.eventTitle,
+        receivedCents,
+        bandCostCents,
+        profitCents: receivedCents - bandCostCents,
+      }
+    })
+  } else {
+    const contracts = await prisma.contract.findMany({
+      where: {
+        status: 'SIGNED',
+        ...(fromDate || toDate
+          ? {
+              event: {
+                date: {
+                  ...(fromDate ? { gte: toStartOfDay(fromDate) } : {}),
+                  ...(toDate ? { lte: toEndOfDay(toDate) } : {}),
+                },
               },
-            },
-          }
-        : {}),
-    },
-    include: {
-      event: {
-        include: {
-          assignments: true,
+            }
+          : {}),
+      },
+      include: {
+        event: {
+          include: {
+            assignments: true,
+          },
         },
       },
-    },
-    orderBy: { event: { date: 'asc' } },
-  })
+      orderBy: { event: { date: 'asc' } },
+    })
 
-  const contractIds = contracts.map((c) => c.id)
-  const receivables =
-    contractIds.length === 0
-      ? []
-      : await prisma.payment.findMany({
-          where: { contractId: { in: contractIds }, direction: 'RECEIVABLE' },
-          select: { contractId: true, amount: true, status: true },
-        })
+    const contractIds = contracts.map((c) => c.id)
+    const receivables =
+      contractIds.length === 0
+        ? []
+        : await prisma.payment.findMany({
+            where: { contractId: { in: contractIds }, direction: 'RECEIVABLE' },
+            select: { contractId: true, amount: true, status: true },
+          })
 
-  const receivedByContract = new Map<string, number>()
-  for (const p of receivables) {
-    if (!p.contractId) continue
-    if (p.status !== 'RECEIVED') continue
-    receivedByContract.set(p.contractId, (receivedByContract.get(p.contractId) ?? 0) + p.amount)
-  }
-
-  const rows = contracts.map((c) => {
-    const bandCostCents = c.event.assignments.reduce((sum, a) => sum + (a.costCents ?? 0), 0)
-    const receivedCents = receivedByContract.get(c.id) ?? 0
-    return {
-      contractId: c.id,
-      eventDate: c.event.date,
-      eventTitle: c.event.title,
-      receivedCents,
-      bandCostCents,
-      profitCents: receivedCents - bandCostCents,
+    const receivedByContract = new Map<string, number>()
+    for (const p of receivables) {
+      if (!p.contractId) continue
+      if (p.status !== 'RECEIVED') continue
+      receivedByContract.set(p.contractId, (receivedByContract.get(p.contractId) ?? 0) + p.amount)
     }
-  })
+
+    rows = contracts.map((c) => {
+      const bandCostCents = c.event.assignments.reduce((sum, a) => sum + (a.costCents ?? 0), 0)
+      const receivedCents = receivedByContract.get(c.id) ?? 0
+      return {
+        contractId: c.id,
+        eventDate: c.event.date,
+        eventTitle: c.event.title,
+        receivedCents,
+        bandCostCents,
+        profitCents: receivedCents - bandCostCents,
+      }
+    })
+  }
 
   const totalProfit = rows.reduce((sum, r) => sum + r.profitCents, 0)
   const totalReceived = rows.reduce((sum, r) => sum + r.receivedCents, 0)

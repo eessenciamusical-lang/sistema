@@ -1,16 +1,43 @@
 import { prisma } from '@/lib/db'
+import { isDbAvailable } from '@/lib/db-availability'
+import { demoContracts, demoEvents } from '@/lib/demo-data'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
 import { contractStatusLabel } from '@/lib/labels'
 import Link from 'next/link'
+import type { ContractStatus } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export default async function AdminContractsPage() {
-  const contracts = await prisma.contract.findMany({
-    include: { event: true },
-    orderBy: { updatedAt: 'desc' },
-  })
+  const dbOk = await isDbAvailable()
+  let contracts:
+    | Array<{
+        id: string
+        event: { title: string; date: Date }
+        status: ContractStatus
+        totalAmount: number
+      }>
+    | [] = []
+
+  if (!dbOk) {
+    const demoC = demoContracts()
+    const events = demoEvents()
+    contracts = demoC.map((c) => {
+      const ev = events.find((e) => e.id === c.eventId)
+      return {
+        id: c.id,
+        event: { title: ev?.title ?? c.eventTitle, date: ev?.date ?? new Date() },
+        status: c.status,
+        totalAmount: c.totalAmount,
+      }
+    })
+  } else {
+    contracts = await prisma.contract.findMany({
+      include: { event: true },
+      orderBy: { updatedAt: 'desc' },
+    })
+  }
 
   return (
     <div className="grid gap-6">

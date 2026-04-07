@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db'
+import { isDbAvailable } from '@/lib/db-availability'
+import { demoEvents } from '@/lib/demo-data'
 import { formatDateBR } from '@/lib/format'
 import Link from 'next/link'
 import { MonthCalendar, type MonthCalendarEvent } from '@/components/month-calendar'
@@ -7,6 +9,9 @@ import { auth } from '@/auth'
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
+
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 function parseMonthParam(value: string | undefined) {
   if (!value) return null
@@ -42,23 +47,60 @@ export default async function AdminEventsPage({ searchParams }: PageProps) {
   const monthStart = new Date(base.getFullYear(), base.getMonth(), 1)
   const monthEnd = new Date(base.getFullYear(), base.getMonth() + 1, 1)
 
-  const [monthEvents, monthTasks, events] = await Promise.all([
-    prisma.event.findMany({
-      where: { date: { gte: monthStart, lt: monthEnd } },
-      orderBy: { date: 'asc' },
-      include: { client: true, assignments: { include: { musician: { include: { user: true } } } } },
-    }),
-    session?.user
-      ? prisma.taskReminder.findMany({
-          where: { userId: session.user.id, startAt: { gte: monthStart, lt: monthEnd } },
-          select: { startAt: true },
-        })
-      : Promise.resolve([]),
-    prisma.event.findMany({
-      orderBy: { date: 'asc' },
-      include: { client: true, assignments: true },
-    }),
-  ])
+  const dbOk = await isDbAvailable()
+
+  let monthEvents: Array<{
+    id: string
+    title: string
+    date: Date
+    eventType: string
+    client?: { name: string | null } | null
+    assignments: Array<{ musician: { user: { name: string } } }>
+    locationName: string | null
+  }> = []
+  let monthTasks: Array<{ startAt: Date }> = []
+  let events: Array<{
+    id: string
+    title: string
+    date: Date
+    client?: { name: string | null } | null
+    assignments: Array<unknown>
+  }> = []
+
+  if (!dbOk) {
+    const demo = demoEvents()
+    monthEvents = demo
+      .filter((e) => e.date >= monthStart && e.date < monthEnd)
+      .map((e) => ({
+        id: e.id,
+        title: e.title,
+        date: e.date,
+        eventType: e.eventType,
+        client: { name: e.clientName },
+        assignments: Array.from({ length: e.musiciansCount }).map(() => ({ musician: { user: { name: '—' } } })),
+        locationName: e.locationName,
+      }))
+    monthTasks = []
+    events = demo.map((e) => ({ id: e.id, title: e.title, date: e.date, client: { name: e.clientName }, assignments: [] }))
+  } else {
+    ;[monthEvents, monthTasks, events] = await Promise.all([
+      prisma.event.findMany({
+        where: { date: { gte: monthStart, lt: monthEnd } },
+        orderBy: { date: 'asc' },
+        include: { client: true, assignments: { include: { musician: { include: { user: true } } } } },
+      }),
+      session?.user
+        ? prisma.taskReminder.findMany({
+            where: { userId: session.user.id, startAt: { gte: monthStart, lt: monthEnd } },
+            select: { startAt: true },
+          })
+        : Promise.resolve([]),
+      prisma.event.findMany({
+        orderBy: { date: 'asc' },
+        include: { client: true, assignments: true },
+      }),
+    ])
+  }
 
   const calendarEvents: MonthCalendarEvent[] = monthEvents.map((e) => ({
     id: e.id,

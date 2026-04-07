@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db'
+import { isDbAvailable } from '@/lib/db-availability'
+import { demoPayments } from '@/lib/demo-data'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
 import { paymentStatusLabel } from '@/lib/labels'
 import type { Prisma } from '@prisma/client'
@@ -42,7 +44,7 @@ function PaymentList({
     paidAt: Date | null
     event: { title: string; date: Date }
   }>
-  updateStatusAction: (formData: FormData) => Promise<void>
+  updateStatusAction?: (formData: FormData) => Promise<void>
 }) {
   return (
     <div className="mt-4 grid gap-3">
@@ -66,22 +68,24 @@ function PaymentList({
               </div>
               <div className="flex flex-col items-start gap-3 sm:items-end">
                 <div className="text-lg font-semibold">{formatCurrencyBRL(p.amount)}</div>
-                <form action={updateStatusAction} className="grid w-full gap-2 sm:w-auto sm:grid-cols-[1fr_auto] sm:items-center">
-                  <input type="hidden" name="id" value={p.id} />
-                  <select
-                    name="status"
-                    defaultValue={p.status}
-                    className="h-10 w-full rounded-xl bg-white/5 px-3 text-sm text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40 sm:w-[190px]"
-                  >
-                    <option value="PENDING">Pendente</option>
-                    {p.direction === 'RECEIVABLE' ? <option value="RECEIVED">Recebido</option> : <option value="PAID">Pago</option>}
-                    {p.direction === 'RECEIVABLE' ? <option value="REFUNDED">Estornado</option> : null}
-                    <option value="CANCELLED">Cancelado</option>
-                  </select>
-                  <button className="h-10 rounded-xl bg-amber-300 px-4 text-sm font-medium text-zinc-950 hover:bg-amber-200">
-                    Salvar
-                  </button>
-                </form>
+                {updateStatusAction ? (
+                  <form action={updateStatusAction} className="grid w-full gap-2 sm:w-auto sm:grid-cols-[1fr_auto] sm:items-center">
+                    <input type="hidden" name="id" value={p.id} />
+                    <select
+                      name="status"
+                      defaultValue={p.status}
+                      className="h-10 w-full rounded-xl bg-white/5 px-3 text-sm text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40 sm:w-[190px]"
+                    >
+                      <option value="PENDING">Pendente</option>
+                      {p.direction === 'RECEIVABLE' ? <option value="RECEIVED">Recebido</option> : <option value="PAID">Pago</option>}
+                      {p.direction === 'RECEIVABLE' ? <option value="REFUNDED">Estornado</option> : null}
+                      <option value="CANCELLED">Cancelado</option>
+                    </select>
+                    <button className="h-10 rounded-xl bg-amber-300 px-4 text-sm font-medium text-zinc-950 hover:bg-amber-200">
+                      Salvar
+                    </button>
+                  </form>
+                ) : null}
               </div>
             </div>
           </div>
@@ -121,11 +125,47 @@ export default async function AdminFinanceiroPage({ searchParams }: PageProps) {
     }
   }
 
-  const payments = await prisma.payment.findMany({
-    where,
-    include: { event: true },
-    orderBy: [{ createdAt: 'desc' }],
-  })
+  const dbOk = await isDbAvailable()
+  let payments:
+    | Array<{
+        id: string
+        amount: number
+        direction: 'RECEIVABLE' | 'PAYABLE'
+        status: 'PENDING' | 'RECEIVED' | 'REFUNDED' | 'PAID' | 'CANCELLED'
+        type?: string
+        createdAt: Date
+        paidAt: Date | null
+        note: string | null
+        event: { title: string; date: Date }
+      }>
+    | [] = []
+
+  if (!dbOk) {
+    payments = demoPayments().map((p) => ({
+      id: p.id,
+      amount: p.amount,
+      direction: p.direction,
+      status: p.status,
+      createdAt: p.dueDate ?? new Date(),
+      paidAt: null,
+      note: p.note,
+      event: { title: 'Evento (Demo)', date: p.dueDate ?? new Date() },
+    }))
+    if (fromDate || toDate) {
+      payments = payments.filter((p) => {
+        const d = p.createdAt
+        return (!fromDate || d >= toStartOfDay(fromDate)) && (!toDate || d <= toEndOfDay(toDate))
+      })
+    }
+    if (where.direction) payments = payments.filter((p) => p.direction === where.direction)
+    if (where.status) payments = payments.filter((p) => p.status === where.status)
+  } else {
+    payments = await prisma.payment.findMany({
+      where,
+      include: { event: true },
+      orderBy: [{ createdAt: 'desc' }],
+    })
+  }
 
   async function updateStatusAction(formData: FormData) {
     'use server'
@@ -258,11 +298,11 @@ export default async function AdminFinanceiroPage({ searchParams }: PageProps) {
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold">A receber</h2>
-          <PaymentList items={receivables} updateStatusAction={updateStatusAction} />
+          <PaymentList items={receivables} updateStatusAction={dbOk ? updateStatusAction : undefined} />
         </section>
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold">A pagar (cachês)</h2>
-          <PaymentList items={payables} updateStatusAction={updateStatusAction} />
+          <PaymentList items={payables} updateStatusAction={dbOk ? updateStatusAction : undefined} />
         </section>
       </div>
     </div>

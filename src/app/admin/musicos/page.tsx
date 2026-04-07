@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db'
+import { isDbAvailable } from '@/lib/db-availability'
+import { demoMusicians } from '@/lib/demo-data'
 import { formatCurrencyBRL } from '@/lib/format'
 import type { Prisma } from '@prisma/client'
 import bcrypt from 'bcryptjs'
@@ -24,17 +26,45 @@ export default async function AdminMusicosPage({ searchParams }: PageProps) {
   if (instrument) where.instrument = { contains: instrument }
   if (minCache || maxCache) where.baseCacheCents = { ...(minCache ? { gte: Math.round(minCache * 100) } : {}), ...(maxCache ? { lte: Math.round(maxCache * 100) } : {}) }
 
-  const musicians = await prisma.musicianProfile.findMany({
-    where,
-    include: {
-      user: true,
-      assignments: {
-        where: { event: { date: { gte: new Date() } } },
-        include: { event: { include: { contract: true } } },
+  const dbOk = await isDbAvailable()
+  let musicians:
+    | Array<{
+        id: string
+        userId: string
+        user: { name: string; login: string | null }
+        instrument: string | null
+        baseCacheCents: number
+        active: boolean
+        lastSeen: Date | null
+        assignments: Array<{ event: { contract: { status: string } | null } }>
+      }>
+    | [] = []
+
+  if (!dbOk) {
+    const demo = demoMusicians()
+    musicians = demo.map((m) => ({
+      id: m.id,
+      userId: m.id,
+      user: { name: m.name, login: null },
+      instrument: m.instrument,
+      baseCacheCents: m.baseCacheCents,
+      active: true,
+      lastSeen: null,
+      assignments: [],
+    }))
+  } else {
+    musicians = await prisma.musicianProfile.findMany({
+      where,
+      include: {
+        user: true,
+        assignments: {
+          where: { event: { date: { gte: new Date() } } },
+          include: { event: { include: { contract: true } } },
+        },
       },
-    },
-    orderBy: { user: { name: 'asc' } },
-  })
+      orderBy: { user: { name: 'asc' } },
+    })
+  }
 
   async function toggleActiveAction(formData: FormData) {
     'use server'
@@ -128,35 +158,39 @@ export default async function AdminMusicosPage({ searchParams }: PageProps) {
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <a
-                    href={`/admin/musicos/${m.id}/edit`}
-                    className="inline-flex h-10 items-center justify-center rounded-xl bg-white/5 px-4 text-sm hover:bg-white/10"
-                  >
-                    Editar
-                  </a>
-                  <form action={toggleActiveAction}>
-                    <input type="hidden" name="id" value={m.id} />
-                    <input type="hidden" name="active" value={(!m.active).toString()} />
-                    <button className="inline-flex h-10 items-center justify-center rounded-xl bg-white/5 px-4 text-sm hover:bg-white/10">
-                      {m.active ? 'Desativar' : 'Ativar'}
-                    </button>
-                  </form>
-                  <details>
-                    <summary className="cursor-pointer text-sm text-amber-200/90">Redefinir PIN</summary>
-                    <form action={resetPinAction} className="mt-2 flex items-center gap-2">
-                      <input type="hidden" name="id" value={m.userId} />
-                      <input
-                        name="pin"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        placeholder="0000"
-                        className="h-10 rounded-lg bg-white/5 px-3 text-sm text-zinc-50 ring-1 ring-white/10"
-                      />
-                      <button className="h-10 rounded-xl bg-amber-300 px-4 text-sm font-medium text-zinc-950 hover:bg-amber-200">
-                        Salvar
-                      </button>
-                    </form>
-                  </details>
+                  {dbOk ? (
+                    <>
+                      <a
+                        href={`/admin/musicos/${m.id}/edit`}
+                        className="inline-flex h-10 items-center justify-center rounded-xl bg-white/5 px-4 text-sm hover:bg-white/10"
+                      >
+                        Editar
+                      </a>
+                      <form action={toggleActiveAction}>
+                        <input type="hidden" name="id" value={m.id} />
+                        <input type="hidden" name="active" value={(!m.active).toString()} />
+                        <button className="inline-flex h-10 items-center justify-center rounded-xl bg-white/5 px-4 text-sm hover:bg-white/10">
+                          {m.active ? 'Desativar' : 'Ativar'}
+                        </button>
+                      </form>
+                      <details>
+                        <summary className="cursor-pointer text-sm text-amber-200/90">Redefinir PIN</summary>
+                        <form action={resetPinAction} className="mt-2 flex items-center gap-2">
+                          <input type="hidden" name="id" value={m.userId} />
+                          <input
+                            name="pin"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            placeholder="0000"
+                            className="h-10 rounded-lg bg-white/5 px-3 text-sm text-zinc-50 ring-1 ring-white/10"
+                          />
+                          <button className="h-10 rounded-xl bg-amber-300 px-4 text-sm font-medium text-zinc-950 hover:bg-amber-200">
+                            Salvar
+                          </button>
+                        </form>
+                      </details>
+                    </>
+                  ) : null}
                 </div>
               </div>
             )

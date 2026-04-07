@@ -1,19 +1,50 @@
 import { prisma } from '@/lib/db'
+import { isDbAvailable } from '@/lib/db-availability'
+import { demoRestaurantContracts } from '@/lib/demo-data'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
 export default async function RestaurantesPage() {
-  const contracts = await prisma.restaurantContract.findMany({
-    include: {
-      restaurant: true,
-      events: {
-        select: { id: true, date: true, payments: { select: { status: true, direction: true } } },
+  const dbOk = await isDbAvailable()
+  let contracts:
+    | Array<{
+        id: string
+        restaurant: { name: string }
+        startDate: Date
+        endDate: Date
+        paymentFrequency: 'DAILY' | 'WEEKLY' | 'MONTHLY'
+        receivableTotalCents: number
+        totalCents: number
+        status: 'ACTIVE' | 'ENDED' | 'CANCELLED'
+        events: Array<{ payments: Array<{ status: string; direction: string }> }>
+      }>
+    | [] = []
+
+  if (!dbOk) {
+    contracts = demoRestaurantContracts().map((c) => ({
+      id: c.id,
+      restaurant: { name: c.restaurantName },
+      startDate: c.startDate,
+      endDate: c.endDate,
+      paymentFrequency: c.paymentFrequency,
+      receivableTotalCents: c.receivableTotalCents,
+      totalCents: c.totalCents,
+      status: c.status,
+      events: [],
+    }))
+  } else {
+    contracts = await prisma.restaurantContract.findMany({
+      include: {
+        restaurant: true,
+        events: {
+          select: { id: true, date: true, payments: { select: { status: true, direction: true } } },
+        },
       },
-    },
-    orderBy: { startDate: 'desc' },
-  })
+      orderBy: { startDate: 'desc' },
+    })
+  }
 
   const now = new Date()
 
