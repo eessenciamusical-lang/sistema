@@ -60,13 +60,6 @@ const next = NextAuth({
 export const { handlers, signIn, signOut } = next
 
 export const auth = async (): Promise<Session> => {
-  try {
-    await prisma.user.upsert({
-      where: { login: 'public' },
-      update: { name: 'Público', role: 'ADMIN', email: null, passwordHash: await bcrypt.hash(`public-${Date.now()}`, 10) },
-      create: { login: 'public', email: null, name: 'Público', role: 'ADMIN', passwordHash: await bcrypt.hash(`public-${Date.now()}`, 10) },
-    })
-  } catch {}
   return {
     user: {
       id: 'public',

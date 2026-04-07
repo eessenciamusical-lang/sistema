@@ -4,10 +4,14 @@ import { contractStatusLabel } from '@/lib/labels'
 import Link from 'next/link'
 import { MonthCalendar, type MonthCalendarEvent } from '@/components/month-calendar'
 import { auth } from '@/auth'
+import type { Prisma } from '@prisma/client'
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
+
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 function parseMonthParam(value: string | undefined) {
   if (!value) return null
@@ -43,40 +47,55 @@ export default async function AdminHome({ searchParams }: PageProps) {
   const monthStart = new Date(base.getFullYear(), base.getMonth(), 1)
   const monthEnd = new Date(base.getFullYear(), base.getMonth() + 1, 1)
 
-  const [monthEvents, monthTasks, events, receivables, payables, contracts] = await Promise.all([
-    prisma.event.findMany({
-      where: { date: { gte: monthStart, lt: monthEnd } },
-      orderBy: { date: 'asc' },
-      include: { client: true, assignments: { include: { musician: { include: { user: true } } } } },
-    }),
-    session?.user
-      ? prisma.taskReminder.findMany({
-          where: { userId: session.user.id, startAt: { gte: monthStart, lt: monthEnd } },
-          select: { startAt: true },
-        })
-      : Promise.resolve([]),
-    prisma.event.findMany({
-      where: { date: { gte: now } },
-      orderBy: { date: 'asc' },
-      take: 5,
-      include: { client: true, assignments: true },
-    }),
-    prisma.payment.aggregate({
-      where: { direction: 'RECEIVABLE', status: { not: 'PAID' } },
-      _sum: { amount: true },
-      _count: true,
-    }),
-    prisma.payment.aggregate({
-      where: { direction: 'PAYABLE', status: { not: 'PAID' } },
-      _sum: { amount: true },
-      _count: true,
-    }),
-    prisma.contract.findMany({
-      orderBy: { updatedAt: 'desc' },
-      take: 5,
-      include: { event: true },
-    }),
-  ])
+  type MonthEvent = Prisma.EventGetPayload<{
+    include: { client: true; assignments: { include: { musician: { include: { user: true } } } } }
+  }>
+  type UpcomingEvent = Prisma.EventGetPayload<{ include: { client: true; assignments: true } }>
+  type RecentContract = Prisma.ContractGetPayload<{ include: { event: true } }>
+
+  let monthEvents: MonthEvent[] = []
+  let monthTasks: Array<{ startAt: Date }> = []
+  let events: UpcomingEvent[] = []
+  let receivables: { _sum: { amount: number | null }; _count: number } = { _sum: { amount: 0 }, _count: 0 }
+  let payables: { _sum: { amount: number | null }; _count: number } = { _sum: { amount: 0 }, _count: 0 }
+  let contracts: RecentContract[] = []
+
+  try {
+    ;[monthEvents, monthTasks, events, receivables, payables, contracts] = await Promise.all([
+      prisma.event.findMany({
+        where: { date: { gte: monthStart, lt: monthEnd } },
+        orderBy: { date: 'asc' },
+        include: { client: true, assignments: { include: { musician: { include: { user: true } } } } },
+      }),
+      session?.user
+        ? prisma.taskReminder.findMany({
+            where: { userId: session.user.id, startAt: { gte: monthStart, lt: monthEnd } },
+            select: { startAt: true },
+          })
+        : Promise.resolve([]),
+      prisma.event.findMany({
+        where: { date: { gte: now } },
+        orderBy: { date: 'asc' },
+        take: 5,
+        include: { client: true, assignments: true },
+      }),
+      prisma.payment.aggregate({
+        where: { direction: 'RECEIVABLE', status: { not: 'PAID' } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      prisma.payment.aggregate({
+        where: { direction: 'PAYABLE', status: { not: 'PAID' } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      prisma.contract.findMany({
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+        include: { event: true },
+      }),
+    ])
+  } catch {}
 
   const calendarEvents: MonthCalendarEvent[] = monthEvents.map((e) => ({
     id: e.id,
@@ -97,6 +116,12 @@ export default async function AdminHome({ searchParams }: PageProps) {
 
   return (
     <div className="grid gap-8">
+      {events.length === 0 && contracts.length === 0 && monthEvents.length === 0 ? (
+        <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100">
+          Banco de dados não configurado ou indisponível. Configure o DATABASE_URL na Vercel e aplique o schema
+          (prisma db push) para habilitar os dados.
+        </div>
+      ) : null}
       <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold">Planner mensal</h2>
