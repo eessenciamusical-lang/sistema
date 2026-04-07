@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "buildCommand": "npx prisma generate --schema prisma/schema.postgres.prisma && npm run build",
+  "functions": {
+    "api/**": {
+      "runtime": "nodejs18.x"
+    }
+  }
+}

@@ -30,7 +30,7 @@ export default async function MusicianLayout({ children }: { children: React.Rea
       <main className="mx-auto w-full max-w-xl px-4 py-6">{children}</main>
 
       <nav className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-zinc-950/90 backdrop-blur">
-        <div className="mx-auto grid max-w-xl grid-cols-3 gap-2 px-4 py-3 text-sm">
+        <div className="mx-auto grid max-w-xl grid-cols-4 gap-2 px-4 py-3 text-sm">
           <Link className="rounded-xl bg-white/5 px-3 py-3 text-center hover:bg-white/10" href="/m/agenda">
             Agenda
           </Link>
@@ -39,6 +39,9 @@ export default async function MusicianLayout({ children }: { children: React.Rea
           </Link>
           <Link className="rounded-xl bg-white/5 px-3 py-3 text-center hover:bg-white/10" href="/m/financeiro">
             Financeiro
+          </Link>
+          <Link className="rounded-xl bg-white/5 px-3 py-3 text-center hover:bg-white/10" href="/m/musicos">
+            Alertas
           </Link>
         </div>
       </nav>

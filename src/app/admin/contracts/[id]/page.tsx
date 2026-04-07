@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
+import { contractStatusLabel } from '@/lib/labels'
+import { syncContractFinance } from '@/lib/finance-sync'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
@@ -45,13 +47,30 @@ export default async function AdminContractDetailPage({ params }: Props) {
     const cents = parseBRLToCents(parsed.data.total)
     if (cents === null) redirect(`/admin/contracts/${id}`)
 
+    const existing = await prisma.contract.findUnique({ where: { id }, select: { status: true, signedAt: true } })
+
     await prisma.contract.update({
       where: { id },
-      data: { totalAmount: cents, status: parsed.data.status, terms: parsed.data.terms || null },
+      data: {
+        totalAmount: cents,
+        status: parsed.data.status,
+        terms: parsed.data.terms || null,
+        signedAt: parsed.data.status === 'SIGNED' && existing?.signedAt == null ? new Date() : existing?.signedAt ?? null,
+      },
     })
+
+    if (parsed.data.status === 'SIGNED') {
+      await syncContractFinance(id)
+    }
 
     redirect(`/admin/contracts/${id}`)
   }
+
+  const bandCostCents = contract.event.assignments.reduce((sum, a) => sum + (a.costCents ?? 0), 0)
+  const resultCents = contract.totalAmount - bandCostCents
+  const sortedAssignments = [...contract.event.assignments].sort((a, b) =>
+    a.musician.user.name.localeCompare(b.musician.user.name),
+  )
 
   return (
     <div className="grid gap-6">
@@ -85,10 +104,10 @@ export default async function AdminContractDetailPage({ params }: Props) {
                   defaultValue={contract.status}
                   className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
                 >
-                  <option value="DRAFT">DRAFT</option>
-                  <option value="SENT">SENT</option>
-                  <option value="SIGNED">SIGNED</option>
-                  <option value="CANCELLED">CANCELLED</option>
+                  <option value="DRAFT">Rascunho</option>
+                  <option value="SENT">Enviado</option>
+                  <option value="SIGNED">Assinado</option>
+                  <option value="CANCELLED">Cancelado</option>
                 </select>
               </label>
             </div>
@@ -110,17 +129,27 @@ export default async function AdminContractDetailPage({ params }: Props) {
         </section>
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <h2 className="text-lg font-semibold">PDF</h2>
-          <p className="mt-2 text-sm text-zinc-300">Gere o PDF do contrato para enviar ao cliente.</p>
+          <h2 className="text-lg font-semibold">Custo da banda</h2>
+          <p className="mt-2 text-sm text-zinc-300">Custos individuais dos músicos escalados (somados no custo do contrato).</p>
+
           <div className="mt-4 grid gap-2">
-            <a
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-white/5 px-5 text-sm font-medium hover:bg-white/10"
-              href={`/api/contracts/${contract.id}/pdf`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Abrir PDF
-            </a>
+            {sortedAssignments.length === 0 ? (
+              <div className="rounded-xl bg-black/20 p-4 text-sm text-zinc-300">Nenhum músico escalado.</div>
+            ) : (
+              sortedAssignments.map((a) => (
+                <div key={a.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{a.musician.user.name}</div>
+                      <div className="mt-1 text-sm text-zinc-400">
+                        {a.roleName || a.musician.instrument || 'Músico'}
+                      </div>
+                    </div>
+                    <div className="text-sm font-semibold">{formatCurrencyBRL(a.costCents ?? 0)}</div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <div className="mt-6 rounded-xl bg-black/20 p-4 text-sm text-zinc-200">
@@ -130,12 +159,35 @@ export default async function AdminContractDetailPage({ params }: Props) {
               <span className="font-semibold">{formatCurrencyBRL(contract.totalAmount)}</span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
+              <span>Custo da banda</span>
+              <span className="font-semibold">{formatCurrencyBRL(bandCostCents)}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span>Resultado</span>
+              <span className="font-semibold">{formatCurrencyBRL(resultCents)}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3">
               <span>Status</span>
-              <span className="font-semibold">{contract.status}</span>
+              <span className="font-semibold">{contractStatusLabel(contract.status)}</span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
               <span>Cliente</span>
               <span className="font-semibold">{contract.event.client?.name ?? '—'}</span>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <h2 className="text-lg font-semibold">PDF</h2>
+            <p className="mt-2 text-sm text-zinc-300">Gere o PDF do contrato para enviar ao cliente.</p>
+            <div className="mt-4 grid gap-2">
+              <a
+                className="inline-flex h-11 items-center justify-center rounded-xl bg-white/5 px-5 text-sm font-medium hover:bg-white/10"
+                href={`/api/contracts/${contract.id}/pdf`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir PDF
+              </a>
             </div>
           </div>
         </section>

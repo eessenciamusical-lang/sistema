@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
+import { contractStatusLabel } from '@/lib/labels'
 import Link from 'next/link'
 
 export default async function AdminContractsPage() {
@@ -33,7 +34,7 @@ export default async function AdminContractsPage() {
                   <div className="text-sm text-zinc-300">{formatDateBR(c.event.date)}</div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="text-sm text-zinc-300">{c.status}</div>
+                  <div className="text-sm text-zinc-300">{contractStatusLabel(c.status)}</div>
                   <div className="text-sm font-semibold">{formatCurrencyBRL(c.totalAmount)}</div>
                 </div>
               </div>

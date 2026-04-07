@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { parseDateTimeBR } from '@/lib/format'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 
@@ -46,10 +47,13 @@ export default async function NewEventPage() {
       clientId = client.id
     }
 
+    const when = parseDateTimeBR(parsed.data.date)
+    if (!when) redirect('/admin/events/new')
+
     const event = await prisma.event.create({
       data: {
         title: parsed.data.title,
-        date: new Date(parsed.data.date),
+        date: when,
         locationName: parsed.data.locationName || null,
         address: parsed.data.address || null,
         city: parsed.data.city || null,
@@ -87,10 +91,10 @@ export default async function NewEventPage() {
         </label>
 
         <label className="grid gap-2">
-          <span className="text-sm text-zinc-200">Data e hora</span>
+          <span className="text-sm text-zinc-200">Data e hora (dd/mm/aaaa hh:mm)</span>
           <input
             name="date"
-            type="datetime-local"
+            placeholder="24/12/2026 19:30"
             required
             className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
           />
@@ -182,4 +186,3 @@ export default async function NewEventPage() {
     </div>
   )
 }
-

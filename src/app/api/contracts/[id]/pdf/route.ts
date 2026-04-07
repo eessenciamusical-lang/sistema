@@ -43,6 +43,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
             ? { name: contract.event.client.name, email: contract.event.client.email, phone: contract.event.client.phone }
             : null,
           assignments: contract.event.assignments.map((a) => ({
+            costCents: a.costCents,
             roleName: a.roleName,
             musician: { user: { name: a.musician.user.name } },
           })),

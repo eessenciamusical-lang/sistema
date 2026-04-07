@@ -27,11 +27,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <Link className="rounded-lg px-3 py-2 text-zinc-200 hover:bg-white/5 hover:text-white" href="/admin/events">
                 Escala
               </Link>
+              <Link className="rounded-lg px-3 py-2 text-zinc-200 hover:bg-white/5 hover:text-white" href="/admin/musicos">
+                Músicos
+              </Link>
               <Link className="rounded-lg px-3 py-2 text-zinc-200 hover:bg-white/5 hover:text-white" href="/admin/financeiro">
                 Financeiro
               </Link>
+              <Link className="rounded-lg px-3 py-2 text-zinc-200 hover:bg-white/5 hover:text-white" href="/admin/dre">
+                DRE
+              </Link>
               <Link className="rounded-lg px-3 py-2 text-zinc-200 hover:bg-white/5 hover:text-white" href="/admin/contracts">
                 Contratos
+              </Link>
+              <Link className="rounded-lg px-3 py-2 text-zinc-200 hover:bg-white/5 hover:text-white" href="/admin/restaurantes">
+                Restaurantes
               </Link>
             </nav>
           </div>

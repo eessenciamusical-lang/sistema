@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
+import { paymentStatusLabel } from '@/lib/labels'
 import { redirect } from 'next/navigation'
 
 export default async function MusicianFinanceiroPage() {
@@ -26,7 +27,7 @@ export default async function MusicianFinanceiroPage() {
         })
 
   const total = payments.reduce((sum, p) => sum + p.amount, 0)
-  const pending = payments.filter((p) => p.status !== 'PAID').reduce((sum, p) => sum + p.amount, 0)
+  const pending = payments.filter((p) => p.status === 'PENDING').reduce((sum, p) => sum + p.amount, 0)
 
   return (
     <div className="grid gap-6">
@@ -58,7 +59,7 @@ export default async function MusicianFinanceiroPage() {
                   <div>
                     <div className="font-medium">{p.event.title}</div>
                     <div className="mt-1 text-sm text-zinc-300">{formatDateBR(p.event.date)}</div>
-                    <div className="mt-1 text-sm text-zinc-400">Status: {p.status}</div>
+                    <div className="mt-1 text-sm text-zinc-400">Status: {paymentStatusLabel(p.status)}</div>
                     {p.note ? <div className="mt-1 text-sm text-zinc-400">{p.note}</div> : null}
                   </div>
                   <div className="text-sm font-semibold text-zinc-50">{formatCurrencyBRL(p.amount)}</div>
@@ -71,4 +72,3 @@ export default async function MusicianFinanceiroPage() {
     </div>
   )
 }
-

@@ -18,6 +18,14 @@ enum AssignmentStatus {
   CANCELLED
 }
 
+enum EventType {
+  WEDDING
+  CEREMONY
+  RECEPTION
+  RESTAURANT
+  OTHER
+}
+
 enum ContractStatus {
   DRAFT
   SENT
@@ -32,13 +40,35 @@ enum PaymentDirection {
 
 enum PaymentStatus {
   PENDING
+  RECEIVED
+  REFUNDED
   PAID
-  OVERDUE
+  CANCELLED
+}
+
+enum PaymentType {
+  CONTRACT_RECEIVABLE
+  MUSICIAN_PAYABLE
+  RESTAURANT_RECEIVABLE
+  OTHER
+}
+
+enum PaymentFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum RestaurantContractStatus {
+  ACTIVE
+  ENDED
+  CANCELLED
 }
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
+  email        String?  @unique
+  login        String?  @unique
   name         String
   role         Role
   passwordHash String
@@ -46,6 +76,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   musicianProfile MusicianProfile?
+  taskReminders   TaskReminder[]
 }
 
 model MusicianProfile {
@@ -54,6 +85,9 @@ model MusicianProfile {
   phone      String?
   instrument String?
   bio        String?
+  baseCacheCents Int  @default(0)
+  active     Boolean @default(true)
+  lastSeen   DateTime?
 
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignments Assignment[]
@@ -79,10 +113,40 @@ model Lead {
   createdAt DateTime @default(now())
 }
 
+model Restaurant {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  city      String?
+  state     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts RestaurantContract[]
+}
+
+model RestaurantContract {
+  id              String                  @id @default(cuid())
+  restaurantId    String
+  startDate       DateTime
+  endDate         DateTime
+  time            String
+  paymentFrequency PaymentFrequency
+  receivableTotalCents Int                     @default(0)
+  totalCents      Int                     @default(0)
+  status          RestaurantContractStatus @default(ACTIVE)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  events      Event[]
+}
+
 model Event {
   id           String   @id @default(cuid())
   title        String
   date         DateTime
+  eventType    EventType @default(WEDDING)
   locationName String?
   address      String?
   city         String?
@@ -95,6 +159,8 @@ model Event {
   clientId  String?
   client    Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
   contract  Contract?
+  restaurantContractId String?
+  restaurantContract   RestaurantContract? @relation(fields: [restaurantContractId], references: [id], onDelete: SetNull)
   payments  Payment[]
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
@@ -109,6 +175,7 @@ model Assignment {
   status    AssignmentStatus @default(CONFIRMED)
   roleName  String?
   callTime  DateTime?
+  costCents Int              @default(0)
   createdAt DateTime         @default(now())
   updatedAt DateTime         @default(now()) @updatedAt
 
@@ -124,16 +191,48 @@ model Contract {
   totalAmount Int
   status      ContractStatus @default(DRAFT)
   terms       String?
+  signedAt    DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 }
 
+model NotificationAck {
+  id           String   @id @default(cuid())
+  userId       String
+  assignmentId String
+  readAt       DateTime @default(now())
+  createdAt    DateTime @default(now())
+  @@unique([userId, assignmentId])
+}
+
+model TaskReminder {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  startAt     DateTime
+  durationMin Int      @default(30)
+  color       String   @default("blue")
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, startAt])
+  @@index([userId, startAt])
+}
+
 model Payment {
   id        String          @id @default(cuid())
   eventId   String
+  type      PaymentType     @default(OTHER)
   direction PaymentDirection
+  contractId String?        @unique
+  assignmentId String?      @unique
+  restaurantContractId String?
   amount    Int
   status    PaymentStatus   @default(PENDING)
   dueDate   DateTime?

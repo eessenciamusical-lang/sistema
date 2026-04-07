@@ -3,18 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "prisma generate && prisma db push && node prisma/seed.mjs && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:push": "prisma db push",
-    "db:seed": "node prisma/seed.mjs"
+    "db:seed": "node prisma/seed.mjs",
+    "db:reset-data": "node prisma/reset-data.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.16.0",
     "@react-pdf/renderer": "^4.3.1",
     "bcryptjs": "^3.0.2",
+    "exceljs": "^4.4.0",
     "next": "16.2.1",
     "next-auth": "^5.0.0-beta.30",
     "zod": "^4.1.5",

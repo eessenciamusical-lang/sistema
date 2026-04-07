@@ -1,5 +1,7 @@
 import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
+import { contractStatusLabel } from '@/lib/labels'
+import type { ContractStatus } from '@prisma/client'
 
 const styles = StyleSheet.create({
   page: { padding: 36, fontSize: 11, fontFamily: 'Helvetica' },
@@ -21,7 +23,7 @@ export function createContractPdf({
   agencyName: string
   contract: {
     id: string
-    status: string
+    status: ContractStatus
     totalAmount: number
     terms: string | null
     event: {
@@ -32,7 +34,7 @@ export function createContractPdf({
       city: string | null
       state: string | null
       client: { name: string; email: string | null; phone: string | null } | null
-      assignments: { musician: { user: { name: string } }; roleName: string | null }[]
+      assignments: { musician: { user: { name: string } }; roleName: string | null; costCents: number | null }[]
     }
   }
 }) {
@@ -41,6 +43,7 @@ export function createContractPdf({
   const musicians = event.assignments
     .map((a) => `${a.musician.user.name}${a.roleName ? ` (${a.roleName})` : ''}`)
     .join(', ')
+  const bandCostCents = event.assignments.reduce((sum, a) => sum + (a.costCents ?? 0), 0)
 
   return (
     <Document>
@@ -74,6 +77,7 @@ export function createContractPdf({
         <View style={styles.section}>
           <Text style={styles.subtitle}>Músicos escalados</Text>
           <Text style={styles.small}>{musicians || '—'}</Text>
+          <Text style={[styles.small, { marginTop: 6 }]}>Custo total da banda: {formatCurrencyBRL(bandCostCents)}</Text>
         </View>
 
         <View style={styles.section}>
@@ -85,7 +89,7 @@ export function createContractPdf({
           <Text style={styles.small}>
             Identificador do contrato: <Text style={styles.mono}>{contract.id}</Text>
           </Text>
-          <Text style={styles.small}>Status: {contract.status}</Text>
+          <Text style={styles.small}>Status: {contractStatusLabel(contract.status)}</Text>
         </View>
 
         <View style={[styles.section, { marginTop: 26 }]}>
@@ -104,4 +108,3 @@ export function createContractPdf({
     </Document>
   )
 }
-

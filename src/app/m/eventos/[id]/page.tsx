@@ -29,7 +29,7 @@ export default async function MusicianEventoDetailPage({ params }: Props) {
   })
 
   const totalPayable = payables.reduce((sum, p) => sum + p.amount, 0)
-  const anyUnpaid = payables.some((p) => p.status !== 'PAID')
+  const anyUnpaid = payables.some((p) => p.status === 'PENDING')
 
   const locationLine = [assignment.event.locationName, assignment.event.address, assignment.event.city, assignment.event.state]
     .filter(Boolean)
