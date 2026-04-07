@@ -3,6 +3,9 @@ import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
 import { contractStatusLabel } from '@/lib/labels'
 import Link from 'next/link'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export default async function AdminContractsPage() {
   const contracts = await prisma.contract.findMany({
     include: { event: true },
