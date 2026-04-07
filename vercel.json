@@ -1,4 +1,4 @@
 {
   "version": 2,
-  "buildCommand": "npx prisma generate --no-hints --schema prisma/schema.postgres.prisma && npx prisma db push --schema prisma/schema.postgres.prisma && node prisma/seed.mjs && npm run build"
+  "buildCommand": "npx prisma generate --no-hints --schema prisma/schema.postgres.prisma && npm run build"
 }
