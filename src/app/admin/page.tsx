@@ -59,7 +59,6 @@ export default async function AdminHome({ searchParams }: PageProps) {
   let receivables: { _sum: { amount: number | null }; _count: number } = { _sum: { amount: 0 }, _count: 0 }
   let payables: { _sum: { amount: number | null }; _count: number } = { _sum: { amount: 0 }, _count: 0 }
   let contracts: RecentContract[] = []
-  let dbError = false
 
   try {
     ;[monthEvents, monthTasks, events, receivables, payables, contracts] = await Promise.all([
@@ -97,7 +96,6 @@ export default async function AdminHome({ searchParams }: PageProps) {
       }),
     ])
   } catch {
-    dbError = true
   }
 
   const calendarEvents: MonthCalendarEvent[] = monthEvents.map((e) => ({
@@ -119,12 +117,6 @@ export default async function AdminHome({ searchParams }: PageProps) {
 
   return (
     <div className="grid gap-8">
-      {dbError ? (
-        <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100">
-          Banco de dados não configurado ou indisponível. Configure o DATABASE_URL na Vercel e aplique o schema
-          (prisma db push) para habilitar os dados.
-        </div>
-      ) : null}
       <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold">Planner mensal</h2>
