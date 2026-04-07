@@ -59,6 +59,7 @@ export default async function AdminHome({ searchParams }: PageProps) {
   let receivables: { _sum: { amount: number | null }; _count: number } = { _sum: { amount: 0 }, _count: 0 }
   let payables: { _sum: { amount: number | null }; _count: number } = { _sum: { amount: 0 }, _count: 0 }
   let contracts: RecentContract[] = []
+  let dbError = false
 
   try {
     ;[monthEvents, monthTasks, events, receivables, payables, contracts] = await Promise.all([
@@ -95,7 +96,9 @@ export default async function AdminHome({ searchParams }: PageProps) {
         include: { event: true },
       }),
     ])
-  } catch {}
+  } catch {
+    dbError = true
+  }
 
   const calendarEvents: MonthCalendarEvent[] = monthEvents.map((e) => ({
     id: e.id,
@@ -116,7 +119,7 @@ export default async function AdminHome({ searchParams }: PageProps) {
 
   return (
     <div className="grid gap-8">
-      {events.length === 0 && contracts.length === 0 && monthEvents.length === 0 ? (
+      {dbError ? (
         <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100">
           Banco de dados não configurado ou indisponível. Configure o DATABASE_URL na Vercel e aplique o schema
           (prisma db push) para habilitar os dados.
