@@ -4,6 +4,9 @@ import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
 import { paymentStatusLabel } from '@/lib/labels'
 import { redirect } from 'next/navigation'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export default async function MusicianFinanceiroPage() {
   const session = await auth()
   if (!session?.user) redirect('/login')

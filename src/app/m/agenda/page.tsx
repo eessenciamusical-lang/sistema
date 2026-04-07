@@ -3,6 +3,9 @@ import { prisma } from '@/lib/db'
 import { formatDateBR, formatDateTimeBR } from '@/lib/format'
 import { redirect } from 'next/navigation'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export default async function MusicianAgendaPage() {
   const session = await auth()
   if (!session?.user) redirect('/login')
@@ -80,4 +83,3 @@ export default async function MusicianAgendaPage() {
     </div>
   )
 }
-

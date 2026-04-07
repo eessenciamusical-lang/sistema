@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "prisma generate && prisma db push && node prisma/seed.mjs && next dev",
+    "dev": "prisma generate --no-hints && prisma db push && node prisma/seed.mjs && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
