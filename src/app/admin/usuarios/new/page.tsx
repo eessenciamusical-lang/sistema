@@ -15,10 +15,14 @@ function randomNumericPin(len: number) {
   return digits.join('')
 }
 
-export default async function AdminUsuariosNewPage() {
+type PageProps = { searchParams?: Promise<Record<string, string | string[] | undefined>> }
+
+export default async function AdminUsuariosNewPage({ searchParams }: PageProps) {
   const session = await auth()
   if (!session?.user) redirect('/login')
   if (session.user.role !== 'ADMIN') redirect('/login')
+  const sp = (await searchParams) ?? {}
+  const error = typeof sp.error === 'string' ? sp.error : null
 
   async function createAction(formData: FormData) {
     'use server'
@@ -58,7 +62,11 @@ export default async function AdminUsuariosNewPage() {
       .select('id')
       .single()
 
-    if (error || !created) redirect('/admin/usuarios/new?error=server')
+    if (error || !created) {
+      const code = (error as unknown as { code?: string })?.code
+      if (code === '23505') redirect('/admin/usuarios/new?error=exists')
+      redirect('/admin/usuarios/new?error=server')
+    }
 
     await auditLog({
       actorUserId: session.user.id,
@@ -83,6 +91,16 @@ export default async function AdminUsuariosNewPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Novo usuário</h1>
         </div>
       </div>
+
+      {error ? (
+        <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100">
+          {error === 'invalid'
+            ? 'Preencha todos os campos obrigatórios com uma senha numérica de 4 a 8 dígitos.'
+            : error === 'exists'
+              ? 'Já existe um usuário com este email/login.'
+              : 'Não foi possível criar o usuário. Verifique as configurações do Supabase.'}
+        </div>
+      ) : null}
 
       <form action={createAction} className="grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
         <label className="grid gap-2">
