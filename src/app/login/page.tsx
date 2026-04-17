@@ -1,4 +1,6 @@
 import { signIn } from '@/auth'
+import { hasSupabaseEnv, hasSupabaseServiceRole, supabaseAdmin } from '@/lib/db'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 type Props = {
@@ -8,6 +10,10 @@ type Props = {
 export default async function LoginPage({ searchParams }: Props) {
   const sp = (await searchParams) ?? {}
   const error = typeof sp.error === 'string' ? sp.error : ''
+
+  const envOk = hasSupabaseEnv() && hasSupabaseServiceRole()
+  const { data: anyUser, error: anyUserErr } = envOk ? await supabaseAdmin.from('User').select('id').limit(1) : { data: null, error: null }
+  const hasAnyUser = Array.isArray(anyUser) ? anyUser.length > 0 : Boolean(anyUser)
 
   async function loginAction(formData: FormData) {
     'use server'
@@ -23,6 +29,21 @@ export default async function LoginPage({ searchParams }: Props) {
       <main className="mx-auto max-w-md px-4 py-16">
         <h1 className="text-2xl font-semibold tracking-tight">Acesso</h1>
         <p className="mt-1 text-sm text-zinc-300">Entre com email/login e senha numérica (4 a 8 dígitos).</p>
+
+        {!hasAnyUser ? (
+          <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100">
+            Nenhum usuário cadastrado ainda. Faça o primeiro cadastro em{' '}
+            <Link className="text-amber-200 underline hover:text-amber-200" href="/setup">
+              /setup
+            </Link>
+            .
+          </div>
+        ) : null}
+        {anyUserErr ? (
+          <div className="mt-6 rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-100">
+            Não foi possível acessar a tabela de usuários. Verifique se o schema foi aplicado no Supabase.
+          </div>
+        ) : null}
 
         {error ? (
           <div className="mt-6 rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-100">

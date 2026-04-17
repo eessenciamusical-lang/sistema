@@ -34,47 +34,6 @@ const next = NextAuth({
 
         const identifier = parsed.data.identifier.toLowerCase()
 
-        const { data: anyUser } = await supabaseAdmin.from('User').select('id').limit(1)
-        const hasAnyUser = Array.isArray(anyUser) ? anyUser.length > 0 : Boolean(anyUser)
-        if (!hasAnyUser) {
-          const bootstrapEmail = (process.env.BOOTSTRAP_ADMIN_EMAIL ?? '').trim().toLowerCase()
-          const bootstrapLogin = (process.env.BOOTSTRAP_ADMIN_LOGIN ?? '').trim().toLowerCase()
-          const bootstrapPin = (process.env.BOOTSTRAP_ADMIN_PIN ?? '').trim()
-          if (bootstrapEmail && bootstrapPin && /^\d{4,8}$/.test(bootstrapPin) && identifier === bootstrapEmail && parsed.data.password === bootstrapPin) {
-            const passwordHash = await bcrypt.hash(bootstrapPin, 10)
-            const { data: created } = await supabaseAdmin
-              .from('User')
-              .insert({ name: 'Admin', email: bootstrapEmail, login: null, role: 'ADMIN', passwordHash, active: true })
-              .select('id,name,email,role')
-              .single()
-            if (created) {
-              return {
-                id: String((created as unknown as { id: string }).id),
-                name: String((created as unknown as { name: string }).name ?? ''),
-                email: (created as unknown as { email?: string | null }).email ?? undefined,
-                role: 'ADMIN',
-              }
-            }
-          }
-
-          if (bootstrapLogin && bootstrapPin && /^\d{4,8}$/.test(bootstrapPin) && identifier === bootstrapLogin && parsed.data.password === bootstrapPin) {
-            const passwordHash = await bcrypt.hash(bootstrapPin, 10)
-            const { data: created } = await supabaseAdmin
-              .from('User')
-              .insert({ name: bootstrapLogin, email: null, login: bootstrapLogin, role: 'ADMIN', passwordHash, active: true })
-              .select('id,name,email,role')
-              .single()
-            if (created) {
-              return {
-                id: String((created as unknown as { id: string }).id),
-                name: String((created as unknown as { name: string }).name ?? ''),
-                email: (created as unknown as { email?: string | null }).email ?? undefined,
-                role: 'ADMIN',
-              }
-            }
-          }
-        }
-
         const { data: user, error } = await supabaseAdmin
           .from('User')
           .select('*')

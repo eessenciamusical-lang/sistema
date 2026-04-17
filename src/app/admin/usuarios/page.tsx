@@ -119,12 +119,14 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
       .object({
         name: z.string().min(2),
         email: z.string().email(),
+        login: z.string().optional().or(z.literal('')),
         password: z.string().regex(/^\d{4,8}$/),
         role: z.enum(['ADMIN', 'MUSICIAN']),
       })
       .safeParse({
         name: String(formData.get('name') ?? '').trim(),
         email: normalizeEmail(String(formData.get('email') ?? '')),
+        login: String(formData.get('login') ?? '').trim().toLowerCase(),
         password: String(formData.get('password') ?? '').trim(),
         role: String(formData.get('role') ?? 'ADMIN'),
       })
@@ -134,6 +136,12 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
     const { data: exists } = await supabaseAdmin.from('User').select('id').eq('email', parsed.data.email).maybeSingle()
     if (exists) redirect('/admin/usuarios?error=email_exists')
 
+    const login = parsed.data.login ? parsed.data.login.trim().toLowerCase() : ''
+    if (login) {
+      const { data: loginExists } = await supabaseAdmin.from('User').select('id').eq('login', login).maybeSingle()
+      if (loginExists) redirect('/admin/usuarios?error=login_exists')
+    }
+
     const passwordHash = await bcrypt.hash(parsed.data.password, 10)
 
     const { data: created, error } = await supabaseAdmin
@@ -141,7 +149,7 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
       .insert({
         name: parsed.data.name,
         email: parsed.data.email,
-        login: null,
+        login: login || null,
         role: parsed.data.role,
         passwordHash,
         active: true,
@@ -159,7 +167,7 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
       actorUserId: session.user.id,
       action: 'USER_CREATE',
       targetUserId: String(created.id),
-      meta: { role: parsed.data.role, email: parsed.data.email },
+      meta: { role: parsed.data.role, email: parsed.data.email, login: login || null },
     })
 
     revalidatePath('/admin/usuarios')
@@ -177,6 +185,7 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
         id: z.string().min(1),
         name: z.string().min(2),
         email: z.string().email(),
+        login: z.string().optional().or(z.literal('')),
         role: z.enum(['ADMIN', 'MUSICIAN']),
         active: z.enum(['true', 'false']),
         password: z.string().optional().or(z.literal('')),
@@ -185,6 +194,7 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
         id: String(formData.get('id') ?? '').trim(),
         name: String(formData.get('name') ?? '').trim(),
         email: normalizeEmail(String(formData.get('email') ?? '')),
+        login: String(formData.get('login') ?? '').trim().toLowerCase(),
         role: String(formData.get('role') ?? 'ADMIN'),
         active: String(formData.get('active') ?? 'true'),
         password: String(formData.get('password') ?? '').trim(),
@@ -202,8 +212,16 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
     const patch: Record<string, unknown> = {
       name: parsed.data.name,
       email: parsed.data.email,
+      login: parsed.data.login ? parsed.data.login.trim().toLowerCase() : null,
       role: parsed.data.role,
       active: safeBool(parsed.data.active),
+    }
+
+    if (parsed.data.login) {
+      const login = parsed.data.login.trim().toLowerCase()
+      const { data: loginOwner } = await supabaseAdmin.from('User').select('id').eq('login', login).maybeSingle()
+      const loginOwnerId = loginOwner && typeof (loginOwner as Record<string, unknown>).id === 'string' ? String((loginOwner as Record<string, unknown>).id) : null
+      if (loginOwnerId && loginOwnerId !== parsed.data.id) redirect('/admin/usuarios?error=login_exists')
     }
 
     if (parsed.data.password) {
@@ -258,7 +276,9 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
     const { data: target } = await supabaseAdmin.from('User').select('*').eq('id', parsed.data.id).maybeSingle()
     if (!target) redirect('/admin/usuarios?error=not_found')
     const targetEmail = (typeof (target as Record<string, unknown>).email === 'string' ? String((target as Record<string, unknown>).email) : '').toLowerCase()
-    if (!targetEmail || parsed.data.confirm !== targetEmail) redirect('/admin/usuarios?error=delete_confirm')
+    const targetLogin = (typeof (target as Record<string, unknown>).login === 'string' ? String((target as Record<string, unknown>).login) : '').toLowerCase()
+    const targetConfirm = targetEmail || targetLogin
+    if (!targetConfirm || parsed.data.confirm !== targetConfirm) redirect('/admin/usuarios?error=delete_confirm')
 
     await supabaseAdmin.from('TaskReminder').delete().eq('userId', parsed.data.id)
     await supabaseAdmin.from('NotificationAck').delete().eq('userId', parsed.data.id)
@@ -278,6 +298,7 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
       targetUserId: parsed.data.id,
       meta: {
         email: typeof (target as Record<string, unknown>).email === 'string' ? String((target as Record<string, unknown>).email) : null,
+        login: typeof (target as Record<string, unknown>).login === 'string' ? String((target as Record<string, unknown>).login) : null,
         role: typeof (target as Record<string, unknown>).role === 'string' ? String((target as Record<string, unknown>).role) : null,
       },
     })
@@ -319,7 +340,11 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
             </label>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-4">
+            <label className="grid gap-2 sm:col-span-2">
+              <span className="text-sm text-zinc-200">Login (opcional)</span>
+              <input name="login" className="h-11 rounded-xl bg-black/40 px-4 text-zinc-50 ring-1 ring-white/10" />
+            </label>
             <label className="grid gap-2">
               <span className="text-sm text-zinc-200">Senha (4–8 dígitos)</span>
               <input
@@ -381,7 +406,7 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
                     <div>
                       <div className="font-medium">{u.name}</div>
                       <div className="mt-1 text-sm text-zinc-300">
-                        {u.email ?? '—'} · {u.role} · {u.active ? 'Ativo' : 'Desativado'}
+                        {(u.email ?? u.login ?? '—') + (u.login && u.email ? ` · ${u.login}` : '')} · {u.role} · {u.active ? 'Ativo' : 'Desativado'}
                       </div>
                     </div>
                     <div className="text-xs text-zinc-400">{u.createdAt ? u.createdAt.toISOString().slice(0, 10) : ''}</div>
@@ -407,7 +432,15 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
                         />
                       </label>
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="grid gap-4 sm:grid-cols-4">
+                      <label className="grid gap-2 sm:col-span-2">
+                        <span className="text-sm text-zinc-200">Login (opcional)</span>
+                        <input
+                          name="login"
+                          defaultValue={u.login ?? ''}
+                          className="h-11 rounded-xl bg-black/40 px-4 text-zinc-50 ring-1 ring-white/10"
+                        />
+                      </label>
                       <label className="grid gap-2">
                         <span className="text-sm text-zinc-200">Tipo</span>
                         <select name="role" defaultValue={u.role} className="h-11 rounded-xl bg-black/40 px-4 text-zinc-50 ring-1 ring-white/10">
@@ -426,7 +459,7 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
                           <option value="false">Desativado</option>
                         </select>
                       </label>
-                      <label className="grid gap-2">
+                      <label className="grid gap-2 sm:col-span-2">
                         <span className="text-sm text-zinc-200">Nova senha (opcional)</span>
                         <input
                           name="password"
@@ -443,11 +476,11 @@ export default async function AdminUsuariosPage({ searchParams }: PageProps) {
                   <form action={deleteAction} className="grid gap-3 rounded-2xl border border-red-400/20 bg-red-400/10 p-4">
                     <input type="hidden" name="id" value={u.id} />
                     <div className="text-sm text-red-100">
-                      Para remover, digite o email do usuário ({u.email ?? '—'}) e confirme.
+                      Para remover, digite o identificador do usuário ({u.email ?? u.login ?? '—'}) e confirme.
                     </div>
                     <input
                       name="confirm"
-                      placeholder="Digite o email para confirmar"
+                      placeholder="Digite o identificador para confirmar"
                       className="h-11 rounded-xl bg-black/40 px-4 text-zinc-50 ring-1 ring-red-400/30"
                     />
                     <button className="h-11 rounded-xl bg-red-500 px-5 font-medium text-white hover:bg-red-400">Remover usuário</button>
