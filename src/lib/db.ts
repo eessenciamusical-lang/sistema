@@ -13,27 +13,25 @@ export const prisma =
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
-function supabaseUrl() {
+export function hasSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
-  if (!url) throw new Error('SUPABASE_URL missing')
-  return url
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  return Boolean(url && anon)
 }
 
-function supabaseAnonKey() {
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!key) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY missing')
-  return key
-}
-
-function supabaseServiceRoleKeyOrNull() {
+export function hasSupabaseServiceRole() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  return key && key.trim() ? key : null
+  return Boolean(key && key.trim())
 }
 
-export const supabaseAnon = createClient(supabaseUrl(), supabaseAnonKey(), {
+const effectiveSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321'
+const effectiveAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'invalid'
+const effectiveAdminKey = (process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY.trim()) || effectiveAnonKey
+
+export const supabaseAnon = createClient(effectiveSupabaseUrl, effectiveAnonKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 })
 
-export const supabaseAdmin = createClient(supabaseUrl(), supabaseServiceRoleKeyOrNull() ?? supabaseAnonKey(), {
+export const supabaseAdmin = createClient(effectiveSupabaseUrl, effectiveAdminKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 })

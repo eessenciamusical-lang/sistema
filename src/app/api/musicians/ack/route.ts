@@ -1,9 +1,10 @@
 import { auth } from '@/auth'
-import { supabaseAdmin } from '@/lib/db'
+import { hasSupabaseEnv, supabaseAdmin } from '@/lib/db'
 
 export async function POST(req: Request) {
   const session = await auth()
   if (!session?.user) return new Response('Unauthorized', { status: 401 })
+  if (!hasSupabaseEnv()) return new Response('Server not configured', { status: 500 })
   const body = await req.json().catch(() => null)
   if (!body?.assignmentId) return new Response('Bad request', { status: 400 })
   await supabaseAdmin.from('NotificationAck').upsert(

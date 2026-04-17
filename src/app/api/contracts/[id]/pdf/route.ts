@@ -1,5 +1,5 @@
 import { auth } from '@/auth'
-import { supabaseAdmin } from '@/lib/db'
+import { hasSupabaseEnv, supabaseAdmin } from '@/lib/db'
 import { createContractPdf } from '@/lib/pdf/contract-pdf'
 import { renderToBuffer } from '@react-pdf/renderer'
 
@@ -8,6 +8,7 @@ export const runtime = 'nodejs'
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
   if (!session?.user || session.user.role !== 'ADMIN') return new Response('Unauthorized', { status: 401 })
+  if (!hasSupabaseEnv()) return new Response('Server not configured', { status: 500 })
 
   const { id } = await params
   const { data: contract, error: cErr } = await supabaseAdmin

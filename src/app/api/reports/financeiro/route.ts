@@ -1,5 +1,5 @@
 import { auth } from '@/auth'
-import { supabaseAdmin } from '@/lib/db'
+import { hasSupabaseEnv, supabaseAdmin } from '@/lib/db'
 import { createFinanceReportPdf } from '@/lib/pdf/finance-report'
 import { renderToBuffer } from '@react-pdf/renderer'
 import ExcelJS from 'exceljs'
@@ -28,6 +28,7 @@ function parseDateOnly(value: string | null) {
 export async function GET(req: Request) {
   const session = await auth()
   if (!session?.user || session.user.role !== 'ADMIN') return new Response('Unauthorized', { status: 401 })
+  if (!hasSupabaseEnv()) return new Response('Server not configured', { status: 500 })
 
   const url = new URL(req.url)
   const format = url.searchParams.get('format') ?? 'pdf'

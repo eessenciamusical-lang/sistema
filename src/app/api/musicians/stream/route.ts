@@ -1,11 +1,12 @@
 import { auth } from '@/auth'
-import { supabaseAdmin } from '@/lib/db'
+import { hasSupabaseEnv, supabaseAdmin } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
 export async function GET() {
   const session = await auth()
   if (!session?.user) return new Response('Unauthorized', { status: 401 })
+  if (!hasSupabaseEnv()) return new Response('Server not configured', { status: 500 })
 
   const { data: profile } = await supabaseAdmin.from('MusicianProfile').select('id').eq('userId', session.user.id).maybeSingle()
   if (!profile) return new Response('Not found', { status: 404 })
