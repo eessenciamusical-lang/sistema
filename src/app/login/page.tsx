@@ -6,7 +6,12 @@ import { z } from 'zod'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export default async function LoginPage() {
+type Props = { searchParams?: Promise<Record<string, string | string[] | undefined>> }
+
+export default async function LoginPage({ searchParams }: Props) {
+  const sp = (await searchParams) ?? {}
+  const error = typeof sp.error === 'string' ? sp.error : null
+
   async function loginAction(formData: FormData) {
     'use server'
     const parsed = z
@@ -21,11 +26,15 @@ export default async function LoginPage() {
 
     if (!parsed.success) redirect('/login?error=invalid')
 
-    await signIn('credentials', {
-      identifier: parsed.data.identifier,
-      password: parsed.data.password,
-      redirectTo: '/admin',
-    })
+    try {
+      await signIn('credentials', {
+        identifier: parsed.data.identifier,
+        password: parsed.data.password,
+        redirectTo: '/admin',
+      })
+    } catch {
+      redirect('/login?error=auth')
+    }
   }
 
   return (
@@ -41,6 +50,16 @@ export default async function LoginPage() {
       <main className="mx-auto max-w-md px-4 py-10">
         <h1 className="text-2xl font-semibold tracking-tight">Acesso</h1>
         <p className="mt-2 text-sm text-zinc-300">Entre com seu login (ou email) e sua senha numérica.</p>
+
+        {error ? (
+          <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100">
+            {error === 'invalid'
+              ? 'Preencha login/email e uma senha numérica de 4 a 8 dígitos.'
+              : error === 'auth'
+                ? 'Login ou senha inválidos.'
+                : 'Não foi possível entrar.'}
+          </div>
+        ) : null}
 
         <form action={loginAction} className="mt-8 grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
           <label className="grid gap-2">
