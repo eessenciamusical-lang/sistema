@@ -60,7 +60,7 @@ export default async function LoginPage() {
               name="password"
               required
               inputMode="numeric"
-              pattern="\\d{4,8}"
+              pattern="[0-9]{4,8}"
               className="h-11 rounded-xl bg-black/40 px-4 text-zinc-50 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-amber-300/40"
               placeholder="12345678"
               autoComplete="current-password"

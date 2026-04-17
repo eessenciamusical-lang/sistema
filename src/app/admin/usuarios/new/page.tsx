@@ -101,7 +101,7 @@ export default async function AdminUsuariosNewPage() {
             name="password"
             required
             inputMode="numeric"
-            pattern="\\d{4,8}"
+            pattern="[0-9]{4,8}"
             defaultValue={defaultPin}
             className="h-11 rounded-xl bg-black/40 px-4 text-zinc-50 ring-1 ring-white/10"
           />
@@ -129,4 +129,3 @@ export default async function AdminUsuariosNewPage() {
     </div>
   )
 }
-

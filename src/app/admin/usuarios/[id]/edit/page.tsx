@@ -94,7 +94,7 @@ export default async function AdminUsuariosEditPage({ params }: Props) {
 
         <label className="grid gap-2">
           <span className="text-sm text-zinc-200">Nova senha (opcional, 4 a 8 dígitos)</span>
-          <input name="password" inputMode="numeric" pattern="\\d{4,8}" className="h-11 rounded-xl bg-black/40 px-4 text-zinc-50 ring-1 ring-white/10" />
+          <input name="password" inputMode="numeric" pattern="[0-9]{4,8}" className="h-11 rounded-xl bg-black/40 px-4 text-zinc-50 ring-1 ring-white/10" />
         </label>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -119,4 +119,3 @@ export default async function AdminUsuariosEditPage({ params }: Props) {
     </div>
   )
 }
-
