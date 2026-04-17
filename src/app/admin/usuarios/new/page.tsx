@@ -1,6 +1,6 @@
 import { auth } from '@/auth'
 import { auditLog } from '@/lib/audit'
-import { supabaseAdmin } from '@/lib/db'
+import { hasSupabaseServiceRole, supabaseAdmin } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
@@ -23,11 +23,14 @@ export default async function AdminUsuariosNewPage({ searchParams }: PageProps) 
   if (session.user.role !== 'ADMIN') redirect('/login')
   const sp = (await searchParams) ?? {}
   const error = typeof sp.error === 'string' ? sp.error : null
+  const errorCode = typeof sp.code === 'string' ? sp.code : null
+  const errorMessage = typeof sp.message === 'string' ? decodeURIComponent(sp.message) : null
 
   async function createAction(formData: FormData) {
     'use server'
     const session = await auth()
     if (!session?.user || session.user.role !== 'ADMIN') redirect('/login')
+    if (!hasSupabaseServiceRole()) redirect('/admin/usuarios/new?error=service')
 
     const parsed = z
       .object({
@@ -65,7 +68,8 @@ export default async function AdminUsuariosNewPage({ searchParams }: PageProps) 
     if (error || !created) {
       const code = (error as unknown as { code?: string })?.code
       if (code === '23505') redirect('/admin/usuarios/new?error=exists')
-      redirect('/admin/usuarios/new?error=server')
+      const message = encodeURIComponent((error as unknown as { message?: string })?.message ?? 'unknown')
+      redirect(`/admin/usuarios/new?error=server&code=${encodeURIComponent(code ?? 'unknown')}&message=${message}`)
     }
 
     await auditLog({
@@ -98,7 +102,16 @@ export default async function AdminUsuariosNewPage({ searchParams }: PageProps) 
             ? 'Preencha todos os campos obrigatórios com uma senha numérica de 4 a 8 dígitos.'
             : error === 'exists'
               ? 'Já existe um usuário com este email/login.'
+              : error === 'service'
+                ? 'O sistema precisa da variável SUPABASE_SERVICE_ROLE_KEY na Vercel para salvar usuários.'
               : 'Não foi possível criar o usuário. Verifique as configurações do Supabase.'}
+          {error === 'server' && (errorCode || errorMessage) ? (
+            <div className="mt-2 text-xs text-amber-100/90">
+              {errorCode ? `Código: ${errorCode}` : null}
+              {errorCode && errorMessage ? ' · ' : null}
+              {errorMessage ? `Detalhe: ${errorMessage}` : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
