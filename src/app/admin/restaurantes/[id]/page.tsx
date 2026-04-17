@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { formatCurrencyBRL, formatDateBR, formatDateTimeBR } from '@/lib/format'
 import { enumerateDaysInclusive, toISODateKey } from '@/lib/restaurants'
 import Link from 'next/link'
@@ -10,21 +10,93 @@ export const dynamic = 'force-dynamic'
 
 export default async function RestauranteContratoDetailPage({ params }: Props) {
   const { id } = await params
-  const contract = await prisma.restaurantContract.findUnique({
-    where: { id },
-    include: {
-      restaurant: true,
-      events: {
-        include: {
-          assignments: { include: { musician: { include: { user: true } } } },
-          payments: true,
-        },
-        orderBy: { date: 'asc' },
-      },
-    },
-  })
+  const { data: contractRow } = await supabaseAdmin
+    .from('RestaurantContract')
+    .select('id,restaurantId,startDate,endDate,time,paymentFrequency,receivableTotalCents,totalCents,status')
+    .eq('id', id)
+    .maybeSingle()
+  if (!contractRow) redirect('/admin/restaurantes')
 
-  if (!contract) redirect('/admin/restaurantes')
+  const { data: restaurant } = await supabaseAdmin.from('Restaurant').select('id,name').eq('id', contractRow.restaurantId).maybeSingle()
+  if (!restaurant) redirect('/admin/restaurantes')
+
+  const { data: eventRows } = await supabaseAdmin
+    .from('Event')
+    .select('id,date')
+    .eq('restaurantContractId', contractRow.id)
+    .order('date', { ascending: true })
+
+  const eventIds = Array.from(new Set((eventRows ?? []).map((e) => String(e.id))))
+  const { data: assignmentRows } =
+    eventIds.length === 0
+      ? { data: [] as Array<{ id: string; eventId: string; musicianId: string; roleName: string | null; costCents: number | null }> }
+      : await supabaseAdmin.from('Assignment').select('id,eventId,musicianId,roleName,costCents').in('eventId', eventIds)
+
+  const musicianIds = Array.from(new Set((assignmentRows ?? []).map((a) => String(a.musicianId)).filter(Boolean)))
+  const { data: musicianProfiles } =
+    musicianIds.length === 0 ? { data: [] as Array<{ id: string; userId: string }> } : await supabaseAdmin.from('MusicianProfile').select('id,userId').in('id', musicianIds)
+  const userIds = Array.from(new Set((musicianProfiles ?? []).map((m) => String(m.userId)).filter(Boolean)))
+  const { data: users } = userIds.length === 0 ? { data: [] as Array<{ id: string; name: string }> } : await supabaseAdmin.from('User').select('id,name').in('id', userIds)
+
+  const userNameById = new Map((users ?? []).map((u) => [String(u.id), String(u.name)]))
+  const userIdByMusicianId = new Map((musicianProfiles ?? []).map((m) => [String(m.id), String(m.userId)]))
+
+  const assignmentsByEventId = new Map<
+    string,
+    Array<{ id: string; roleName: string | null; costCents: number | null; musician: { user: { name: string } } }>
+  >()
+  for (const a of assignmentRows ?? []) {
+    const eventId = String(a.eventId)
+    const musicianId = String(a.musicianId)
+    const userId = userIdByMusicianId.get(musicianId) ?? ''
+    const name = userNameById.get(userId) ?? 'Músico'
+    const list = assignmentsByEventId.get(eventId) ?? []
+    list.push({
+      id: String(a.id),
+      roleName: (a.roleName as string | null) ?? null,
+      costCents: (a.costCents as number | null) ?? null,
+      musician: { user: { name } },
+    })
+    assignmentsByEventId.set(eventId, list)
+  }
+
+  const events = (eventRows ?? []).map((e) => ({
+    id: String(e.id),
+    date: new Date(String(e.date)),
+    assignments: assignmentsByEventId.get(String(e.id)) ?? [],
+  }))
+
+  const { data: pendingPaymentRows } = await supabaseAdmin
+    .from('Payment')
+    .select('id,eventId,status,direction,amount,dueDate,note')
+    .eq('restaurantContractId', contractRow.id)
+    .eq('status', 'PENDING')
+
+  const eventById = new Map(events.map((e) => [e.id, e]))
+  const pendingPayments = (pendingPaymentRows ?? [])
+    .map((p) => ({
+      id: String(p.id),
+      direction: p.direction as 'RECEIVABLE' | 'PAYABLE',
+      amount: Number(p.amount) || 0,
+      status: p.status as 'PENDING',
+      dueDate: p.dueDate ? new Date(String(p.dueDate)) : null,
+      note: (p.note as string | null) ?? null,
+      event: eventById.get(String(p.eventId)) ?? { id: String(p.eventId), date: new Date() },
+    }))
+    .filter((p) => p.event && p.status === 'PENDING')
+
+  const contract = {
+    id: String(contractRow.id),
+    restaurant: { name: String(restaurant.name) },
+    startDate: new Date(String(contractRow.startDate)),
+    endDate: new Date(String(contractRow.endDate)),
+    time: String(contractRow.time),
+    paymentFrequency: contractRow.paymentFrequency as 'DAILY' | 'WEEKLY' | 'MONTHLY',
+    receivableTotalCents: Number(contractRow.receivableTotalCents) || 0,
+    totalCents: Number(contractRow.totalCents) || 0,
+    status: contractRow.status as 'ACTIVE' | 'ENDED' | 'CANCELLED',
+    events,
+  }
 
   const now = new Date()
   const days = enumerateDaysInclusive(contract.startDate, contract.endDate)
@@ -35,10 +107,6 @@ export default async function RestauranteContratoDetailPage({ params }: Props) {
     list.push(e)
     eventsByDay.set(key, list)
   }
-
-  const pendingPayments = contract.events
-    .flatMap((e) => e.payments.map((p) => ({ ...p, event: e })))
-    .filter((p) => p.status === 'PENDING')
 
   const upcoming = contract.events.filter((e) => e.date >= now).slice(0, 10)
   const history = contract.events.filter((e) => e.date < now).slice(-10).reverse()

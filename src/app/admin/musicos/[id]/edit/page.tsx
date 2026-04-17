@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
@@ -15,8 +15,11 @@ type Props = { params: Promise<{ id: string }> }
 
 export default async function EditMusicianPage({ params }: Props) {
   const { id } = await params
-  const m = await prisma.musicianProfile.findUnique({ where: { id }, include: { user: true } })
+  const { data: m } = await supabaseAdmin.from('MusicianProfile').select('id,userId,phone,instrument,baseCacheCents,active').eq('id', id).maybeSingle()
   if (!m) redirect('/admin/musicos')
+  const musicianUserId = String(m.userId)
+  const { data: user } = await supabaseAdmin.from('User').select('id,name,login').eq('id', m.userId).maybeSingle()
+  if (!user) redirect('/admin/musicos')
 
   async function updateAction(formData: FormData) {
     'use server'
@@ -41,25 +44,19 @@ export default async function EditMusicianPage({ params }: Props) {
     const cents = parseMoneyBR(parsed.data.cache)
     if (cents === null) redirect(`/admin/musicos/${id}/edit`)
 
-    const existing = await prisma.user.findFirst({
-      where: { login: parsed.data.login, id: { not: m!.userId } },
-      select: { id: true },
-    })
+    const { data: existing } = await supabaseAdmin.from('User').select('id').eq('login', parsed.data.login).neq('id', musicianUserId).maybeSingle()
     if (existing) redirect(`/admin/musicos/${id}/edit`)
 
-    await prisma.user.update({
-      where: { id: m!.userId },
-      data: { name: parsed.data.name, login: parsed.data.login, email: null },
-    })
-    await prisma.musicianProfile.update({
-      where: { id },
-      data: {
+    await supabaseAdmin.from('User').update({ name: parsed.data.name, login: parsed.data.login, email: null }).eq('id', musicianUserId)
+    await supabaseAdmin
+      .from('MusicianProfile')
+      .update({
         phone: parsed.data.phone || null,
         instrument: parsed.data.instrument || null,
         baseCacheCents: cents,
         active: parsed.data.active === 'true',
-      },
-    })
+      })
+      .eq('id', id)
     revalidatePath('/admin/musicos')
     redirect('/admin/musicos')
   }
@@ -70,24 +67,24 @@ export default async function EditMusicianPage({ params }: Props) {
       <form action={updateAction} className="mt-6 grid gap-4">
         <label className="grid gap-2">
           <span className="text-sm text-zinc-200">Nome</span>
-          <input name="name" defaultValue={m.user.name} className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10" />
+          <input name="name" defaultValue={user.name} className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10" />
         </label>
         <label className="grid gap-2">
           <span className="text-sm text-zinc-200">Login</span>
-          <input name="login" defaultValue={m.user.login ?? ''} className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10" />
+          <input name="login" defaultValue={user.login ?? ''} className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10" />
         </label>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-2">
             <span className="text-sm text-zinc-200">Cachê (R$)</span>
             <input
               name="cache"
-              defaultValue={(m.baseCacheCents / 100).toFixed(2).replace('.', ',')}
+              defaultValue={(Number(m.baseCacheCents) / 100).toFixed(2).replace('.', ',')}
               className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10"
             />
           </label>
           <label className="grid gap-2">
             <span className="text-sm text-zinc-200">Telefone</span>
-            <input name="phone" defaultValue={m.phone ?? ''} className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10" />
+            <input name="phone" defaultValue={(m.phone as string | null) ?? ''} className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10" />
           </label>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -95,13 +92,13 @@ export default async function EditMusicianPage({ params }: Props) {
             <span className="text-sm text-zinc-200">Instrumento</span>
             <input
               name="instrument"
-              defaultValue={m.instrument ?? ''}
+              defaultValue={(m.instrument as string | null) ?? ''}
               className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10"
             />
           </label>
           <label className="grid gap-2">
             <span className="text-sm text-zinc-200">Status</span>
-            <select name="active" defaultValue={String(m.active)} className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10">
+            <select name="active" defaultValue={String(Boolean(m.active))} className="h-11 rounded-xl bg-white/5 px-4 text-zinc-50 ring-1 ring-white/10">
               <option value="true">Ativo</option>
               <option value="false">Inativo</option>
             </select>

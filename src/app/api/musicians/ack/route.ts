@@ -1,16 +1,14 @@
 import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 
 export async function POST(req: Request) {
   const session = await auth()
-  if (!session?.user || session.user.role !== 'MUSICIAN') return new Response('Unauthorized', { status: 401 })
+  if (!session?.user) return new Response('Unauthorized', { status: 401 })
   const body = await req.json().catch(() => null)
   if (!body?.assignmentId) return new Response('Bad request', { status: 400 })
-  await prisma.notificationAck.upsert({
-    where: { userId_assignmentId: { userId: session.user.id, assignmentId: String(body.assignmentId) } },
-    update: { readAt: new Date() },
-    create: { userId: session.user.id, assignmentId: String(body.assignmentId) },
-  })
+  await supabaseAdmin.from('NotificationAck').upsert(
+    { userId: session.user.id, assignmentId: String(body.assignmentId), readAt: new Date().toISOString() },
+    { onConflict: 'userId,assignmentId' },
+  )
   return new Response('ok')
 }
-

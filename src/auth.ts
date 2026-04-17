@@ -1,9 +1,6 @@
 import NextAuth from 'next-auth'
 import type { Session } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
-import bcrypt from 'bcryptjs'
-import { z } from 'zod'
-import { prisma } from '@/lib/db'
 
 const next = NextAuth({
   trustHost: true,
@@ -17,29 +14,7 @@ const next = NextAuth({
         identifier: { label: 'Login ou Email', type: 'text' },
         password: { label: 'Senha / PIN', type: 'password' },
       },
-      authorize: async (credentials) => {
-        const parsed = z
-          .object({
-            identifier: z.string().min(1),
-            password: z.string().min(1),
-          })
-          .safeParse(credentials)
-
-        if (!parsed.success) return null
-
-        const identifier = parsed.data.identifier.trim().toLowerCase()
-        const user = await prisma.user.findFirst({
-          where: {
-            OR: [{ email: identifier }, { login: identifier }],
-          },
-        })
-
-        if (!user) return null
-        const ok = await bcrypt.compare(parsed.data.password, user.passwordHash)
-        if (!ok) return null
-
-        return { id: user.id, email: user.email ?? undefined, name: user.name, role: user.role }
-      },
+      authorize: async () => null,
     }),
   ],
   callbacks: {

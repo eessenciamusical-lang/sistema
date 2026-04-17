@@ -1,8 +1,7 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { isDbAvailable } from '@/lib/db-availability'
 import { demoMusicians } from '@/lib/demo-data'
 import { formatCurrencyBRL } from '@/lib/format'
-import type { Prisma } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -20,11 +19,6 @@ export default async function AdminMusicosPage({ searchParams }: PageProps) {
   const instrument = typeof sp.instrument === 'string' ? sp.instrument.trim() : ''
   const minCache = typeof sp.min === 'string' ? Number(sp.min) : undefined
   const maxCache = typeof sp.max === 'string' ? Number(sp.max) : undefined
-
-  const where: Prisma.MusicianProfileWhereInput = {}
-  if (q) where.user = { is: { OR: [{ name: { contains: q } }, { login: { contains: q.toLowerCase() } }] } }
-  if (instrument) where.instrument = { contains: instrument }
-  if (minCache || maxCache) where.baseCacheCents = { ...(minCache ? { gte: Math.round(minCache * 100) } : {}), ...(maxCache ? { lte: Math.round(maxCache * 100) } : {}) }
 
   const dbOk = await isDbAvailable()
   let musicians:
@@ -53,17 +47,47 @@ export default async function AdminMusicosPage({ searchParams }: PageProps) {
       assignments: [],
     }))
   } else {
-    musicians = await prisma.musicianProfile.findMany({
-      where,
-      include: {
-        user: true,
-        assignments: {
-          where: { event: { date: { gte: new Date() } } },
-          include: { event: { include: { contract: true } } },
-        },
-      },
-      orderBy: { user: { name: 'asc' } },
-    })
+    const { data: profiles, error } = await supabaseAdmin
+      .from('MusicianProfile')
+      .select('id,userId,instrument,baseCacheCents,active,lastSeen')
+      .order('id', { ascending: true })
+    if (error) {
+      musicians = []
+    } else {
+      const userIds = Array.from(new Set((profiles ?? []).map((p) => String(p.userId)).filter(Boolean)))
+      const { data: users } =
+        userIds.length === 0 ? { data: [] as Array<{ id: string; name: string; login: string | null }> } : await supabaseAdmin.from('User').select('id,name,login').in('id', userIds)
+      const userById = new Map((users ?? []).map((u) => [String(u.id), u]))
+
+      const list = (profiles ?? []).map((p) => {
+        const u = userById.get(String(p.userId))
+        return {
+          id: String(p.id),
+          userId: String(p.userId),
+          user: { name: u?.name ? String(u.name) : 'Músico', login: (u?.login as string | null) ?? null },
+          instrument: (p.instrument as string | null) ?? null,
+          baseCacheCents: Number(p.baseCacheCents) || 0,
+          active: Boolean(p.active),
+          lastSeen: p.lastSeen ? new Date(String(p.lastSeen)) : null,
+          assignments: [] as Array<{ event: { contract: { status: string } | null } }>,
+        }
+      })
+
+      const qLower = q.toLowerCase()
+      musicians = list
+        .filter((m) => {
+          if (qLower) {
+            const nameOk = m.user.name.toLowerCase().includes(qLower)
+            const loginOk = (m.user.login ?? '').toLowerCase().includes(qLower)
+            if (!nameOk && !loginOk) return false
+          }
+          if (instrument && !(m.instrument ?? '').toLowerCase().includes(instrument.toLowerCase())) return false
+          if (minCache && m.baseCacheCents < Math.round(minCache * 100)) return false
+          if (maxCache && m.baseCacheCents > Math.round(maxCache * 100)) return false
+          return true
+        })
+        .sort((a, b) => a.user.name.localeCompare(b.user.name))
+    }
   }
 
   async function toggleActiveAction(formData: FormData) {
@@ -73,7 +97,7 @@ export default async function AdminMusicosPage({ searchParams }: PageProps) {
       active: String(formData.get('active') ?? ''),
     })
     if (!parsed.success) redirect('/admin/musicos')
-    await prisma.musicianProfile.update({ where: { id: parsed.data.id }, data: { active: parsed.data.active === 'true' } })
+    await supabaseAdmin.from('MusicianProfile').update({ active: parsed.data.active === 'true' }).eq('id', parsed.data.id)
     revalidatePath('/admin/musicos')
     redirect('/admin/musicos')
   }
@@ -85,7 +109,7 @@ export default async function AdminMusicosPage({ searchParams }: PageProps) {
       pin: String(formData.get('pin') ?? '').trim(),
     })
     if (!parsed.success) redirect('/admin/musicos')
-    await prisma.user.update({ where: { id: parsed.data.id }, data: { passwordHash: await bcrypt.hash(parsed.data.pin, 10) } })
+    await supabaseAdmin.from('User').update({ passwordHash: await bcrypt.hash(parsed.data.pin, 10) }).eq('id', parsed.data.id)
     revalidatePath('/admin/musicos')
     redirect('/admin/musicos')
   }

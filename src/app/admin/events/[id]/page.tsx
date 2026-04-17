@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { formatCurrencyBRL, formatDateTimeBR } from '@/lib/format'
 import { paymentStatusLabel } from '@/lib/labels'
 import { syncContractFinance } from '@/lib/finance-sync'
@@ -22,20 +22,73 @@ function parseBRLToCents(value: string) {
 export default async function AdminEventDetailPage({ params }: Props) {
   const { id } = await params
 
-  const [event, musicians, payments] = await Promise.all([
-    prisma.event.findUnique({
-      where: { id },
-      include: {
-        client: true,
-        assignments: { include: { musician: { include: { user: true } } }, orderBy: { createdAt: 'asc' } },
-        contract: true,
-      },
-    }),
-    prisma.musicianProfile.findMany({ include: { user: true }, orderBy: { user: { name: 'asc' } } }),
-    prisma.payment.findMany({ where: { eventId: id }, orderBy: { createdAt: 'desc' } }),
+  const [{ data: event }, { data: contract }, { data: paymentsRows }] = await Promise.all([
+    supabaseAdmin.from('Event').select('id,title,date,locationName,address,city,state,mapUrl,timeline,repertoire,clientId').eq('id', id).maybeSingle(),
+    supabaseAdmin.from('Contract').select('id,status').eq('eventId', id).maybeSingle(),
+    supabaseAdmin.from('Payment').select('id,direction,status,amount,note').eq('eventId', id).order('createdAt', { ascending: false }),
   ])
 
   if (!event) redirect('/admin/events')
+
+  const { data: client } = event.clientId
+    ? await supabaseAdmin.from('Client').select('id,name').eq('id', event.clientId).maybeSingle()
+    : { data: null as null | { id: string; name: string } }
+
+  const { data: musicianProfiles } = await supabaseAdmin.from('MusicianProfile').select('id,userId,instrument').order('id', { ascending: true })
+  const userIds = Array.from(new Set((musicianProfiles ?? []).map((m) => String(m.userId)).filter(Boolean)))
+  const { data: users } =
+    userIds.length === 0 ? { data: [] as Array<{ id: string; name: string }> } : await supabaseAdmin.from('User').select('id,name').in('id', userIds)
+  const userById = new Map((users ?? []).map((u) => [String(u.id), u]))
+
+  const musicians = (musicianProfiles ?? [])
+    .map((m) => ({
+      id: String(m.id),
+      instrument: (m.instrument as string | null) ?? null,
+      user: { name: userById.get(String(m.userId))?.name ? String(userById.get(String(m.userId))?.name) : 'Músico' },
+    }))
+    .sort((a, b) => a.user.name.localeCompare(b.user.name))
+
+  const { data: assignmentRows } = await supabaseAdmin
+    .from('Assignment')
+    .select('id,eventId,musicianId,roleName,status,costCents')
+    .eq('eventId', id)
+    .order('createdAt', { ascending: true })
+
+  const musicianIds = Array.from(new Set((assignmentRows ?? []).map((a) => String(a.musicianId)).filter(Boolean)))
+  const { data: assignedProfiles } =
+    musicianIds.length === 0
+      ? { data: [] as Array<{ id: string; userId: string; instrument: string | null }> }
+      : await supabaseAdmin.from('MusicianProfile').select('id,userId,instrument').in('id', musicianIds)
+  const assignedUserIds = Array.from(new Set((assignedProfiles ?? []).map((m) => String(m.userId)).filter(Boolean)))
+  const { data: assignedUsers } =
+    assignedUserIds.length === 0
+      ? { data: [] as Array<{ id: string; name: string }> }
+      : await supabaseAdmin.from('User').select('id,name').in('id', assignedUserIds)
+  const assignedUserNameById = new Map((assignedUsers ?? []).map((u) => [String(u.id), String(u.name)]))
+  const assignedProfileById = new Map((assignedProfiles ?? []).map((p) => [String(p.id), p]))
+
+  const assignments = (assignmentRows ?? []).map((a) => {
+    const prof = assignedProfileById.get(String(a.musicianId))
+    const userId = prof?.userId ? String(prof.userId) : ''
+    return {
+      id: String(a.id),
+      roleName: (a.roleName as string | null) ?? null,
+      status: String(a.status),
+      costCents: (a.costCents as number | null) ?? null,
+      musician: {
+        instrument: (prof?.instrument as string | null) ?? null,
+        user: { name: assignedUserNameById.get(userId) ?? 'Músico' },
+      },
+    }
+  })
+
+  const payments = (paymentsRows ?? []).map((p) => ({
+    id: String(p.id),
+    direction: p.direction as 'RECEIVABLE' | 'PAYABLE',
+    status: p.status as 'PENDING' | 'RECEIVED' | 'REFUNDED' | 'PAID' | 'CANCELLED',
+    amount: Number(p.amount) || 0,
+    note: (p.note as string | null) ?? null,
+  }))
 
   async function addMusicianAction(formData: FormData) {
     'use server'
@@ -57,14 +110,19 @@ export default async function AdminEventDetailPage({ params }: Props) {
     const costCents = parsed.data.cost ? parseBRLToCents(parsed.data.cost) : 0
     if (costCents === null) redirect(`/admin/events/${id}`)
 
-    await prisma.assignment.upsert({
-      where: { eventId_musicianId: { eventId: id, musicianId: parsed.data.musicianId } },
-      update: { roleName: parsed.data.roleName || null, status: 'CONFIRMED', costCents },
-      create: { eventId: id, musicianId: parsed.data.musicianId, roleName: parsed.data.roleName || null, costCents },
-    })
+    await supabaseAdmin.from('Assignment').upsert(
+      {
+        eventId: id,
+        musicianId: parsed.data.musicianId,
+        roleName: parsed.data.roleName || null,
+        status: 'CONFIRMED',
+        costCents,
+      },
+      { onConflict: 'eventId,musicianId' },
+    )
 
-    const contract = await prisma.contract.findUnique({ where: { eventId: id }, select: { id: true, status: true } })
-    if (contract?.status === 'SIGNED') await syncContractFinance(contract.id)
+    const { data: c } = await supabaseAdmin.from('Contract').select('id,status').eq('eventId', id).maybeSingle()
+    if (c?.status === 'SIGNED') await syncContractFinance(String(c.id))
 
     revalidatePath(`/admin/events/${id}`)
     redirect(`/admin/events/${id}`)
@@ -88,13 +146,10 @@ export default async function AdminEventDetailPage({ params }: Props) {
     const costCents = parseBRLToCents(parsed.data.cost)
     if (costCents === null) redirect(`/admin/events/${id}`)
 
-    await prisma.assignment.update({
-      where: { id: parsed.data.assignmentId },
-      data: { costCents },
-    })
+    await supabaseAdmin.from('Assignment').update({ costCents }).eq('id', parsed.data.assignmentId)
 
-    const contract = await prisma.contract.findUnique({ where: { eventId: id }, select: { id: true, status: true } })
-    if (contract?.status === 'SIGNED') await syncContractFinance(contract.id)
+    const { data: c } = await supabaseAdmin.from('Contract').select('id,status').eq('eventId', id).maybeSingle()
+    if (c?.status === 'SIGNED') await syncContractFinance(String(c.id))
 
     revalidatePath(`/admin/events/${id}`)
     redirect(`/admin/events/${id}`)
@@ -121,21 +176,20 @@ export default async function AdminEventDetailPage({ params }: Props) {
       if (!rec.selected) continue
       const cents = rec.cost ? parseBRLToCents(rec.cost) : 0
       if (cents === null) continue
-      await prisma.assignment.upsert({
-        where: { eventId_musicianId: { eventId: id, musicianId } },
-        update: { roleName: rec.role || null, status: 'CONFIRMED', costCents: cents },
-        create: { eventId: id, musicianId, roleName: rec.role || null, costCents: cents },
-      })
+      await supabaseAdmin.from('Assignment').upsert(
+        { eventId: id, musicianId, roleName: rec.role || null, status: 'CONFIRMED', costCents: cents },
+        { onConflict: 'eventId,musicianId' },
+      )
     }
 
-    const contract = await prisma.contract.findUnique({ where: { eventId: id }, select: { id: true, status: true } })
-    if (contract?.status === 'SIGNED') await syncContractFinance(contract.id)
+    const { data: c } = await supabaseAdmin.from('Contract').select('id,status').eq('eventId', id).maybeSingle()
+    if (c?.status === 'SIGNED') await syncContractFinance(String(c.id))
 
     revalidatePath(`/admin/events/${id}`)
     redirect(`/admin/events/${id}`)
   }
 
-  const bandCostCents = event.assignments.reduce((sum, a) => sum + (a.costCents ?? 0), 0)
+  const bandCostCents = assignments.reduce((sum, a) => sum + (a.costCents ?? 0), 0)
 
   return (
     <div className="grid gap-6">
@@ -143,10 +197,10 @@ export default async function AdminEventDetailPage({ params }: Props) {
         <Link className="text-sm text-amber-200/90 hover:text-amber-200" href="/admin/events">
           ← Voltar
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">{event.title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{String(event.title)}</h1>
         <div className="text-sm text-zinc-300">
-          {formatDateTimeBR(event.date)}
-          {event.client?.name ? ` · ${event.client.name}` : ''}
+          {formatDateTimeBR(new Date(String(event.date)))}
+          {client?.name ? ` · ${client.name}` : ''}
         </div>
         <div className="mt-2 inline-flex w-fit items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200">
           <span className="text-zinc-400">Custo total da banda</span>
@@ -160,25 +214,25 @@ export default async function AdminEventDetailPage({ params }: Props) {
           <div className="mt-4 grid gap-3 text-sm text-zinc-200">
             <div className="rounded-xl bg-black/20 p-4">
               <div className="text-zinc-400">Local</div>
-              <div className="mt-1 font-medium">{event.locationName || '—'}</div>
+              <div className="mt-1 font-medium">{(event.locationName as string | null) || '—'}</div>
               <div className="mt-1 text-zinc-300">
-                {[event.address, event.city, event.state].filter(Boolean).join(' · ') || '—'}
+                {[(event.address as string | null), (event.city as string | null), (event.state as string | null)].filter(Boolean).join(' · ') || '—'}
               </div>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                {event.mapUrl ? (
+                {(event.mapUrl as string | null) ? (
                   <a
                     className="inline-flex h-10 items-center justify-center rounded-xl bg-white/5 px-4 text-sm hover:bg-white/10"
                     target="_blank"
                     rel="noreferrer"
-                    href={event.mapUrl}
+                    href={String(event.mapUrl)}
                   >
                     Abrir mapa
                   </a>
                 ) : null}
-                {event.contract?.id ? (
+                {contract?.id ? (
                   <Link
                     className="inline-flex h-10 items-center justify-center rounded-xl bg-white/5 px-4 text-sm hover:bg-white/10"
-                    href={`/admin/contracts/${event.contract.id}`}
+                    href={`/admin/contracts/${contract.id}`}
                   >
                     Contrato
                   </Link>
@@ -189,15 +243,16 @@ export default async function AdminEventDetailPage({ params }: Props) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl bg-black/20 p-4">
                 <div className="text-zinc-400">Cronograma</div>
-                <pre className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">{event.timeline || '—'}</pre>
+                  <pre className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">{(event.timeline as string | null) || '—'}</pre>
               </div>
               <div className="rounded-xl bg-black/20 p-4">
                 <div className="text-zinc-400">Repertório</div>
-                <pre className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">{event.repertoire || '—'}</pre>
+                  <pre className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">{(event.repertoire as string | null) || '—'}</pre>
               </div>
             </div>
           </div>
         </section>
+
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold">Escalar músico</h2>
@@ -271,10 +326,10 @@ export default async function AdminEventDetailPage({ params }: Props) {
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold">Músicos escalados</h2>
           <div className="mt-4 grid gap-3">
-            {event.assignments.length === 0 ? (
+            {assignments.length === 0 ? (
               <div className="text-sm text-zinc-300">Nenhum músico escalado.</div>
             ) : (
-              event.assignments.map((a) => (
+              assignments.map((a) => (
                 <div key={a.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>

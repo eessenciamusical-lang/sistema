@@ -1,6 +1,7 @@
 import { auth, signOut } from '@/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -18,7 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-4">
             <Link href="/admin" className="flex items-center gap-3">
-              <img src="/essencia-logo.svg" alt="Essência Musical" className="h-8 w-auto" />
+              <Image src="/essencia-logo.svg" alt="Essência Musical" width={160} height={32} className="h-8 w-auto" />
             </Link>
             <nav className="hidden items-center gap-2 text-sm sm:flex">
               <Link className="rounded-lg px-3 py-2 text-zinc-200 hover:bg-white/5 hover:text-white" href="/admin">

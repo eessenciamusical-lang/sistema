@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -57,30 +57,34 @@ export default async function NewMusicianPage({ searchParams }: Props) {
 
     if (!parsed.success) redirect('/admin/musicos/new?error=invalid')
 
-    const exists = await prisma.user.findUnique({ where: { login: parsed.data.login } })
+    const { data: exists } = await supabaseAdmin.from('User').select('id').eq('login', parsed.data.login).maybeSingle()
     if (exists) redirect('/admin/musicos/new?error=login')
 
     const cents = parseMoneyBR(parsed.data.cache)
     if (cents === null) redirect('/admin/musicos/new?error=cache')
 
     try {
-      await prisma.user.create({
-        data: {
+      const { data: user, error: userErr } = await supabaseAdmin
+        .from('User')
+        .insert({
           login: parsed.data.login,
           email: null,
           name: parsed.data.name,
           role: 'MUSICIAN',
           passwordHash: await bcrypt.hash(parsed.data.pin, 10),
-          musicianProfile: {
-            create: {
-              phone: parsed.data.phone || null,
-              instrument: parsed.data.instrument || null,
-              baseCacheCents: cents,
-              active: parsed.data.active === 'true',
-            },
-          },
-        },
+        })
+        .select('id')
+        .single()
+      if (userErr || !user) redirect('/admin/musicos/new?error=server')
+
+      const { error: profileErr } = await supabaseAdmin.from('MusicianProfile').insert({
+        userId: user.id,
+        phone: parsed.data.phone || null,
+        instrument: parsed.data.instrument || null,
+        baseCacheCents: cents,
+        active: parsed.data.active === 'true',
       })
+      if (profileErr) redirect('/admin/musicos/new?error=server')
     } catch {
       redirect('/admin/musicos/new?error=server')
     }

@@ -1,9 +1,8 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { isDbAvailable } from '@/lib/db-availability'
 import { demoPayments } from '@/lib/demo-data'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
 import { paymentStatusLabel } from '@/lib/labels'
-import type { Prisma } from '@prisma/client'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 
@@ -106,24 +105,11 @@ export default async function AdminFinanceiroPage({ searchParams }: PageProps) {
   const fromDate = parseDateOnly(fromRaw)
   const toDate = parseDateOnly(toRaw)
 
-  const where: Prisma.PaymentWhereInput = {}
-
-  if (directionRaw === 'RECEIVABLE' || directionRaw === 'PAYABLE') where.direction = directionRaw
-  if (
-    statusRaw === 'PENDING' ||
-    statusRaw === 'RECEIVED' ||
-    statusRaw === 'REFUNDED' ||
-    statusRaw === 'PAID' ||
-    statusRaw === 'CANCELLED'
-  )
-    where.status = statusRaw
-
-  if (fromDate || toDate) {
-    where.createdAt = {
-      ...(fromDate ? { gte: toStartOfDay(fromDate) } : {}),
-      ...(toDate ? { lte: toEndOfDay(toDate) } : {}),
-    }
-  }
+  const directionFilter = directionRaw === 'RECEIVABLE' || directionRaw === 'PAYABLE' ? directionRaw : null
+  const statusFilter =
+    statusRaw === 'PENDING' || statusRaw === 'RECEIVED' || statusRaw === 'REFUNDED' || statusRaw === 'PAID' || statusRaw === 'CANCELLED'
+      ? statusRaw
+      : null
 
   const dbOk = await isDbAvailable()
   let payments:
@@ -157,14 +143,42 @@ export default async function AdminFinanceiroPage({ searchParams }: PageProps) {
         return (!fromDate || d >= toStartOfDay(fromDate)) && (!toDate || d <= toEndOfDay(toDate))
       })
     }
-    if (where.direction) payments = payments.filter((p) => p.direction === where.direction)
-    if (where.status) payments = payments.filter((p) => p.status === where.status)
+    if (directionFilter) payments = payments.filter((p) => p.direction === directionFilter)
+    if (statusFilter) payments = payments.filter((p) => p.status === statusFilter)
   } else {
-    payments = await prisma.payment.findMany({
-      where,
-      include: { event: true },
-      orderBy: [{ createdAt: 'desc' }],
-    })
+    let q = supabaseAdmin
+      .from('Payment')
+      .select('id,eventId,amount,direction,status,note,createdAt,paidAt')
+      .order('createdAt', { ascending: false })
+
+    if (directionFilter) q = q.eq('direction', directionFilter)
+    if (statusFilter) q = q.eq('status', statusFilter)
+    if (fromDate) q = q.gte('createdAt', toStartOfDay(fromDate).toISOString())
+    if (toDate) q = q.lte('createdAt', toEndOfDay(toDate).toISOString())
+
+    const { data: rows, error } = await q
+    if (error) {
+      payments = []
+    } else {
+      const eventIds = Array.from(new Set((rows ?? []).map((p) => String(p.eventId)).filter(Boolean)))
+      const { data: events } =
+        eventIds.length === 0 ? { data: [] as Array<{ id: string; title: string; date: string }> } : await supabaseAdmin.from('Event').select('id,title,date').in('id', eventIds)
+      const eventById = new Map((events ?? []).map((e) => [String(e.id), e]))
+
+      payments = (rows ?? []).map((p) => {
+        const ev = eventById.get(String(p.eventId))
+        return {
+          id: String(p.id),
+          amount: Number(p.amount) || 0,
+          direction: p.direction as 'RECEIVABLE' | 'PAYABLE',
+          status: p.status as 'PENDING' | 'RECEIVED' | 'REFUNDED' | 'PAID' | 'CANCELLED',
+          createdAt: new Date(String(p.createdAt)),
+          paidAt: p.paidAt ? new Date(String(p.paidAt)) : null,
+          note: (p.note as string | null) ?? null,
+          event: { title: ev?.title ? String(ev.title) : 'Evento', date: ev?.date ? new Date(String(ev.date)) : new Date() },
+        }
+      })
+    }
   }
 
   async function updateStatusAction(formData: FormData) {
@@ -183,10 +197,10 @@ export default async function AdminFinanceiroPage({ searchParams }: PageProps) {
     const paidAt =
       parsed.data.status === 'PAID' || parsed.data.status === 'RECEIVED' ? new Date() : parsed.data.status === 'PENDING' ? null : null
 
-    await prisma.payment.update({
-      where: { id: parsed.data.id },
-      data: { status: parsed.data.status, paidAt },
-    })
+    await supabaseAdmin
+      .from('Payment')
+      .update({ status: parsed.data.status, paidAt: paidAt ? paidAt.toISOString() : null })
+      .eq('id', parsed.data.id)
     redirect('/admin/financeiro')
   }
 

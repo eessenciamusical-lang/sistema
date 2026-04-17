@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { isDbAvailable } from '@/lib/db-availability'
 import { demoEvents } from '@/lib/demo-data'
 import { formatDateBR } from '@/lib/format'
@@ -83,23 +83,97 @@ export default async function AdminEventsPage({ searchParams }: PageProps) {
     monthTasks = []
     events = demo.map((e) => ({ id: e.id, title: e.title, date: e.date, client: { name: e.clientName }, assignments: [] }))
   } else {
-    ;[monthEvents, monthTasks, events] = await Promise.all([
-      prisma.event.findMany({
-        where: { date: { gte: monthStart, lt: monthEnd } },
-        orderBy: { date: 'asc' },
-        include: { client: true, assignments: { include: { musician: { include: { user: true } } } } },
-      }),
-      session?.user
-        ? prisma.taskReminder.findMany({
-            where: { userId: session.user.id, startAt: { gte: monthStart, lt: monthEnd } },
-            select: { startAt: true },
-          })
-        : Promise.resolve([]),
-      prisma.event.findMany({
-        orderBy: { date: 'asc' },
-        include: { client: true, assignments: true },
-      }),
+    const [{ data: monthEventRows, error: monthEventsErr }, { data: eventsRows, error: eventsErr }] = await Promise.all([
+      supabaseAdmin
+        .from('Event')
+        .select('id,title,date,eventType,locationName,clientId')
+        .gte('date', monthStart.toISOString())
+        .lt('date', monthEnd.toISOString())
+        .order('date', { ascending: true }),
+      supabaseAdmin.from('Event').select('id,title,date,clientId').order('date', { ascending: true }),
     ])
+
+    if (monthEventsErr || eventsErr) {
+      monthEvents = []
+      monthTasks = []
+      events = []
+    } else {
+      const monthIds = Array.from(new Set((monthEventRows ?? []).map((e) => String(e.id))))
+      const allIds = Array.from(new Set((eventsRows ?? []).map((e) => String(e.id))))
+      const unionIds = Array.from(new Set([...monthIds, ...allIds]))
+
+      const clientIds = Array.from(
+        new Set([...monthEventRows ?? [], ...eventsRows ?? []].map((e) => String((e as { clientId?: string | null }).clientId ?? '')).filter(Boolean)),
+      )
+      const { data: clients } =
+        clientIds.length === 0 ? { data: [] as Array<{ id: string; name: string | null }> } : await supabaseAdmin.from('Client').select('id,name').in('id', clientIds)
+      const clientById = new Map((clients ?? []).map((c) => [String(c.id), c]))
+
+      const { data: monthTaskRows } =
+        session?.user
+          ? await supabaseAdmin
+              .from('TaskReminder')
+              .select('startAt')
+              .eq('userId', session.user.id)
+              .gte('startAt', monthStart.toISOString())
+              .lt('startAt', monthEnd.toISOString())
+          : { data: [] as Array<{ startAt: string }> }
+      monthTasks = (monthTaskRows ?? []).map((t) => ({ startAt: new Date(String(t.startAt)) }))
+
+      const { data: assignments } =
+        unionIds.length === 0
+          ? { data: [] as Array<{ eventId: string; musicianId: string }> }
+          : await supabaseAdmin.from('Assignment').select('eventId,musicianId').in('eventId', unionIds)
+
+      const countByEventId = new Map<string, number>()
+      for (const a of assignments ?? []) {
+        const key = String(a.eventId)
+        countByEventId.set(key, (countByEventId.get(key) ?? 0) + 1)
+      }
+
+      const monthMusicianIds = Array.from(
+        new Set((assignments ?? []).filter((a) => monthIds.includes(String(a.eventId))).map((a) => String(a.musicianId)).filter(Boolean)),
+      )
+      const { data: musicianProfiles } =
+        monthMusicianIds.length === 0
+          ? { data: [] as Array<{ id: string; userId: string }> }
+          : await supabaseAdmin.from('MusicianProfile').select('id,userId').in('id', monthMusicianIds)
+      const userIds = Array.from(new Set((musicianProfiles ?? []).map((m) => String(m.userId)).filter(Boolean)))
+      const { data: users } =
+        userIds.length === 0 ? { data: [] as Array<{ id: string; name: string }> } : await supabaseAdmin.from('User').select('id,name').in('id', userIds)
+      const userNameById = new Map((users ?? []).map((u) => [String(u.id), String(u.name)]))
+      const userIdByMusicianId = new Map((musicianProfiles ?? []).map((m) => [String(m.id), String(m.userId)]))
+
+      const musiciansByEventId = new Map<string, string[]>()
+      for (const a of assignments ?? []) {
+        const eventId = String(a.eventId)
+        if (!monthIds.includes(eventId)) continue
+        const musicianId = String(a.musicianId)
+        const userId = userIdByMusicianId.get(musicianId) ?? ''
+        const name = userNameById.get(userId) ?? 'Músico'
+        const list = musiciansByEventId.get(eventId) ?? []
+        list.push(name)
+        musiciansByEventId.set(eventId, list)
+      }
+
+      monthEvents = (monthEventRows ?? []).map((e) => ({
+        id: String(e.id),
+        title: String(e.title),
+        date: new Date(String(e.date)),
+        eventType: String(e.eventType),
+        client: e.clientId ? { name: (clientById.get(String(e.clientId))?.name as string | null) ?? null } : null,
+        assignments: (musiciansByEventId.get(String(e.id)) ?? []).map((name) => ({ musician: { user: { name } } })),
+        locationName: (e.locationName as string | null) ?? null,
+      }))
+
+      events = (eventsRows ?? []).map((e) => ({
+        id: String(e.id),
+        title: String(e.title),
+        date: new Date(String(e.date)),
+        client: e.clientId ? { name: (clientById.get(String(e.clientId))?.name as string | null) ?? null } : null,
+        assignments: Array.from({ length: countByEventId.get(String(e.id)) ?? 0 }),
+      }))
+    }
   }
 
   const calendarEvents: MonthCalendarEvent[] = monthEvents.map((e) => ({

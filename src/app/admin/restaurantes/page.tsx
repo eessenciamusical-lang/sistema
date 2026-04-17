@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { isDbAvailable } from '@/lib/db-availability'
 import { demoRestaurantContracts } from '@/lib/demo-data'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
@@ -35,15 +35,42 @@ export default async function RestaurantesPage() {
       events: [],
     }))
   } else {
-    contracts = await prisma.restaurantContract.findMany({
-      include: {
-        restaurant: true,
-        events: {
-          select: { id: true, date: true, payments: { select: { status: true, direction: true } } },
-        },
-      },
-      orderBy: { startDate: 'desc' },
-    })
+    const { data: rows, error } = await supabaseAdmin
+      .from('RestaurantContract')
+      .select('id,restaurantId,startDate,endDate,paymentFrequency,receivableTotalCents,totalCents,status')
+      .order('startDate', { ascending: false })
+    if (error) {
+      contracts = []
+    } else {
+      const restaurantIds = Array.from(new Set((rows ?? []).map((c) => String(c.restaurantId)).filter(Boolean)))
+      const { data: restaurants } =
+        restaurantIds.length === 0 ? { data: [] as Array<{ id: string; name: string }> } : await supabaseAdmin.from('Restaurant').select('id,name').in('id', restaurantIds)
+      const restaurantById = new Map((restaurants ?? []).map((r) => [String(r.id), r]))
+
+      const contractIds = Array.from(new Set((rows ?? []).map((c) => String(c.id))))
+      const { data: pending } =
+        contractIds.length === 0
+          ? { data: [] as Array<{ restaurantContractId: string | null }> }
+          : await supabaseAdmin.from('Payment').select('restaurantContractId').eq('status', 'PENDING').in('restaurantContractId', contractIds)
+      const pendingByContract = new Map<string, number>()
+      for (const p of pending ?? []) {
+        if (!p.restaurantContractId) continue
+        const key = String(p.restaurantContractId)
+        pendingByContract.set(key, (pendingByContract.get(key) ?? 0) + 1)
+      }
+
+      contracts = (rows ?? []).map((c) => ({
+        id: String(c.id),
+        restaurant: { name: restaurantById.get(String(c.restaurantId))?.name ? String(restaurantById.get(String(c.restaurantId))?.name) : 'Restaurante' },
+        startDate: new Date(String(c.startDate)),
+        endDate: new Date(String(c.endDate)),
+        paymentFrequency: c.paymentFrequency as 'DAILY' | 'WEEKLY' | 'MONTHLY',
+        receivableTotalCents: Number(c.receivableTotalCents) || 0,
+        totalCents: Number(c.totalCents) || 0,
+        status: c.status as 'ACTIVE' | 'ENDED' | 'CANCELLED',
+        events: Array.from({ length: pendingByContract.get(String(c.id)) ?? 0 }).map(() => ({ payments: [{ status: 'PENDING', direction: 'RECEIVABLE' }] })),
+      }))
+    }
   }
 
   const now = new Date()

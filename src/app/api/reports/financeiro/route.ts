@@ -1,9 +1,8 @@
 import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { createFinanceReportPdf } from '@/lib/pdf/finance-report'
 import { renderToBuffer } from '@react-pdf/renderer'
 import ExcelJS from 'exceljs'
-import type { Prisma } from '@prisma/client'
 
 export const runtime = 'nodejs'
 
@@ -40,29 +39,37 @@ export async function GET(req: Request) {
   const fromDate = parseDateOnly(fromRaw)
   const toDate = parseDateOnly(toRaw)
 
-  const where: Prisma.PaymentWhereInput = {}
+  const directionFilter = directionRaw === 'RECEIVABLE' || directionRaw === 'PAYABLE' ? directionRaw : null
+  const statusFilter =
+    statusRaw === 'PENDING' || statusRaw === 'RECEIVED' || statusRaw === 'REFUNDED' || statusRaw === 'PAID' || statusRaw === 'CANCELLED'
+      ? statusRaw
+      : null
 
-  if (directionRaw === 'RECEIVABLE' || directionRaw === 'PAYABLE') where.direction = directionRaw
-  if (
-    statusRaw === 'PENDING' ||
-    statusRaw === 'RECEIVED' ||
-    statusRaw === 'REFUNDED' ||
-    statusRaw === 'PAID' ||
-    statusRaw === 'CANCELLED'
-  )
-    where.status = statusRaw
+  let q = supabaseAdmin.from('Payment').select('id,eventId,createdAt,direction,status,amount,note').order('createdAt', { ascending: true })
+  if (directionFilter) q = q.eq('direction', directionFilter)
+  if (statusFilter) q = q.eq('status', statusFilter)
+  if (fromDate) q = q.gte('createdAt', toStartOfDay(fromDate).toISOString())
+  if (toDate) q = q.lte('createdAt', toEndOfDay(toDate).toISOString())
 
-  if (fromDate || toDate) {
-    where.createdAt = {
-      ...(fromDate ? { gte: toStartOfDay(fromDate) } : {}),
-      ...(toDate ? { lte: toEndOfDay(toDate) } : {}),
+  const { data: rows, error } = await q
+  if (error) return new Response('Server error', { status: 500 })
+
+  const eventIds = Array.from(new Set((rows ?? []).map((p) => String(p.eventId)).filter(Boolean)))
+  const { data: events } =
+    eventIds.length === 0 ? { data: [] as Array<{ id: string; title: string; date: string }> } : await supabaseAdmin.from('Event').select('id,title,date').in('id', eventIds)
+  const eventById = new Map((events ?? []).map((e) => [String(e.id), e]))
+
+  const payments = (rows ?? []).map((p) => {
+    const ev = eventById.get(String(p.eventId))
+    return {
+      id: String(p.id),
+      createdAt: new Date(String(p.createdAt)),
+      direction: p.direction as 'RECEIVABLE' | 'PAYABLE',
+      status: p.status as 'PENDING' | 'RECEIVED' | 'REFUNDED' | 'PAID' | 'CANCELLED',
+      amount: Number(p.amount) || 0,
+      note: (p.note as string | null) ?? null,
+      event: { title: ev?.title ? String(ev.title) : 'Evento', date: ev?.date ? new Date(String(ev.date)) : new Date() },
     }
-  }
-
-  const payments = await prisma.payment.findMany({
-    where,
-    include: { event: true },
-    orderBy: { createdAt: 'asc' },
   })
 
   const periodLabel = `Período: ${fromRaw || '—'} até ${toRaw || '—'}`

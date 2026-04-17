@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useMemo, useState } from 'react'
 
 function digitsFromAny(value: string) {
@@ -239,7 +240,7 @@ export default function OrcamentoPage() {
       <header className="border-b border-white/10">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-4">
           <Link href="/" className="flex items-center gap-3">
-            <img src="/essencia-logo.svg" alt="Essência Musical" className="h-9 w-auto" />
+            <Image src="/essencia-logo.svg" alt="Essência Musical" width={180} height={36} className="h-9 w-auto" />
           </Link>
           <Link className="rounded-lg px-3 py-2 text-sm text-zinc-200 hover:bg-white/5 hover:text-white" href="/">
             Voltar

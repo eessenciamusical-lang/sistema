@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { parseDateBR } from '@/lib/format'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -45,11 +45,30 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
   const timeParsed = parseTimeHHMM(time)
   const days = startDate && endDate && timeParsed ? enumerateDaysInclusive(startDate, endDate) : []
 
-  const musicians = await prisma.musicianProfile.findMany({
-    where: { active: true },
-    include: { user: true },
-    orderBy: { user: { name: 'asc' } },
-  })
+  const { data: musicianProfiles } = await supabaseAdmin
+    .from('MusicianProfile')
+    .select('id,userId,baseCacheCents,instrument,active')
+    .eq('active', true)
+    .order('id', { ascending: true })
+  const userIds = Array.from(new Set((musicianProfiles ?? []).map((m) => String(m.userId)).filter(Boolean)))
+  const { data: users } =
+    userIds.length === 0
+      ? { data: [] as Array<{ id: string; name: string; login: string | null }> }
+      : await supabaseAdmin.from('User').select('id,name,login').in('id', userIds)
+  const userById = new Map((users ?? []).map((u) => [String(u.id), u]))
+  const musicians = (musicianProfiles ?? [])
+    .map((m) => ({
+      id: String(m.id),
+      userId: String(m.userId),
+      baseCacheCents: Number(m.baseCacheCents) || 0,
+      instrument: (m.instrument as string | null) ?? null,
+      active: Boolean(m.active),
+      user: {
+        name: userById.get(String(m.userId))?.name ? String(userById.get(String(m.userId))?.name) : 'Músico',
+        login: (userById.get(String(m.userId))?.login as string | null) ?? null,
+      },
+    }))
+    .sort((a, b) => a.user.name.localeCompare(b.user.name))
 
   async function createAction(formData: FormData) {
     'use server'
@@ -122,37 +141,52 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
 
     let contractId: string
     try {
-      contractId = await prisma.$transaction(async (tx) => {
-      const restaurant =
-        (await tx.restaurant.findFirst({
-          where: { name: parsed.data.restaurantName, address: parsed.data.address },
-        })) ??
-        (await tx.restaurant.create({
-          data: {
-            name: parsed.data.restaurantName,
-            address: parsed.data.address,
-            city: parsed.data.city || null,
-            state: parsed.data.state || null,
-          },
-        }))
+      const { data: existingRestaurant } = await supabaseAdmin
+        .from('Restaurant')
+        .select('id,name,address,city,state')
+        .eq('name', parsed.data.restaurantName)
+        .eq('address', parsed.data.address)
+        .maybeSingle()
 
-      const contract = await tx.restaurantContract.create({
-        data: {
+      const restaurant =
+        existingRestaurant ??
+        (
+          await supabaseAdmin
+            .from('Restaurant')
+            .insert({
+              name: parsed.data.restaurantName,
+              address: parsed.data.address,
+              city: parsed.data.city || null,
+              state: parsed.data.state || null,
+            })
+            .select('id,name,address,city,state')
+            .single()
+        ).data
+
+      if (!restaurant) throw new Error('RESTAURANT')
+
+      const { data: contract } = await supabaseAdmin
+        .from('RestaurantContract')
+        .insert({
           restaurantId: restaurant.id,
-          startDate: s,
-          endDate: e,
+          startDate: s.toISOString(),
+          endDate: e.toISOString(),
           time: parsed.data.time,
           paymentFrequency: parsed.data.freq,
           receivableTotalCents,
           status: 'ACTIVE',
-        },
-      })
+        })
+        .select('id,paymentFrequency')
+        .single()
 
-      const musicianProfiles = await tx.musicianProfile.findMany({
-        where: { id: { in: selectedMusicianIds } },
-        select: { id: true, baseCacheCents: true },
-      })
-      const baseCacheById = new Map(musicianProfiles.map((m) => [m.id, m.baseCacheCents]))
+      if (!contract) throw new Error('CONTRACT')
+      contractId = String(contract.id)
+
+      const { data: selectedProfiles } =
+        selectedMusicianIds.length === 0
+          ? { data: [] as Array<{ id: string; baseCacheCents: number }> }
+          : await supabaseAdmin.from('MusicianProfile').select('id,baseCacheCents').in('id', selectedMusicianIds)
+      const baseCacheById = new Map((selectedProfiles ?? []).map((m) => [String(m.id), Number(m.baseCacheCents) || 0]))
 
       const createdEvents: Array<{ id: string; date: Date; dayKey: string; totalCostCents: number }> = []
 
@@ -163,77 +197,89 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
         const selected = selectionsByDay.get(key) ?? []
         const selectedIds = selected.map((x) => x.musicianId)
 
-        const conflict = await tx.assignment.findFirst({
-          where: { musicianId: { in: selectedIds }, event: { date: when } },
-          select: { id: true },
-        })
-        if (conflict) {
-          throw new Error('CONFLICT')
+        if (selectedIds.length) {
+          const { data: sameTimeEvents } = await supabaseAdmin.from('Event').select('id').eq('date', when.toISOString())
+          const sameTimeEventIds = Array.from(new Set((sameTimeEvents ?? []).map((x) => String(x.id))))
+          if (sameTimeEventIds.length) {
+            const { data: conflict } = await supabaseAdmin
+              .from('Assignment')
+              .select('id')
+              .in('eventId', sameTimeEventIds)
+              .in('musicianId', selectedIds)
+              .limit(1)
+            if ((conflict ?? []).length) throw new Error('CONFLICT')
+          }
         }
 
-        const event = await tx.event.create({
-          data: {
+        const { data: event } = await supabaseAdmin
+          .from('Event')
+          .insert({
             title: `Restaurante: ${restaurant.name}`,
-            date: when,
+            date: when.toISOString(),
             eventType: 'RESTAURANT',
             locationName: restaurant.name,
             address: restaurant.address,
             city: restaurant.city,
             state: restaurant.state,
             restaurantContractId: contract.id,
-          },
-        })
+          })
+          .select('id')
+          .single()
+
+        if (!event) throw new Error('EVENT')
 
         let dayTotal = 0
         for (const sel of selected) {
           const base = baseCacheById.get(sel.musicianId) ?? 0
           const costCents = sel.costOverrideCents ?? base
           dayTotal += costCents
-          const assignment = await tx.assignment.create({
-            data: {
+
+          const { data: assignment } = await supabaseAdmin
+            .from('Assignment')
+            .insert({
               eventId: event.id,
               musicianId: sel.musicianId,
               status: 'CONFIRMED',
               costCents,
-            },
-          })
-          await tx.payment.create({
-            data: {
-              eventId: event.id,
-              restaurantContractId: contract.id,
-              type: 'MUSICIAN_PAYABLE',
-              direction: 'PAYABLE',
-              assignmentId: assignment.id,
-              amount: costCents,
-              status: 'PENDING',
-              dueDate: when,
-              note: `Cachê (Restaurante): ${restaurant.name}`,
-            },
+            })
+            .select('id')
+            .single()
+
+          if (!assignment) throw new Error('ASSIGNMENT')
+
+          await supabaseAdmin.from('Payment').insert({
+            eventId: event.id,
+            restaurantContractId: contract.id,
+            type: 'MUSICIAN_PAYABLE',
+            direction: 'PAYABLE',
+            assignmentId: assignment.id,
+            amount: costCents,
+            status: 'PENDING',
+            dueDate: when.toISOString(),
+            note: `Cachê (Restaurante): ${restaurant.name}`,
           })
         }
 
-        createdEvents.push({ id: event.id, date: when, dayKey: key, totalCostCents: dayTotal })
+        createdEvents.push({ id: String(event.id), date: when, dayKey: key, totalCostCents: dayTotal })
       }
 
       const totalCents = createdEvents.reduce((sum, x) => sum + x.totalCostCents, 0)
-      await tx.restaurantContract.update({ where: { id: contract.id }, data: { totalCents } })
+      await supabaseAdmin.from('RestaurantContract').update({ totalCents }).eq('id', contract.id)
 
-      const freq = contract.paymentFrequency
+      const freq = String(contract.paymentFrequency)
       if (freq === 'DAILY') {
         const daily = distributeCents(receivableTotalCents, createdEvents.length)
         for (let i = 0; i < createdEvents.length; i++) {
           const ev = createdEvents[i]
-          await tx.payment.create({
-            data: {
-              eventId: ev.id,
-              restaurantContractId: contract.id,
-              type: 'RESTAURANT_RECEIVABLE',
-              direction: 'RECEIVABLE',
-              amount: daily[i] ?? 0,
-              status: 'PENDING',
-              dueDate: ev.date,
-              note: `Restaurante (${restaurant.name}) - diário`,
-            },
+          await supabaseAdmin.from('Payment').insert({
+            eventId: ev.id,
+            restaurantContractId: contract.id,
+            type: 'RESTAURANT_RECEIVABLE',
+            direction: 'RECEIVABLE',
+            amount: daily[i] ?? 0,
+            status: 'PENDING',
+            dueDate: ev.date.toISOString(),
+            note: `Restaurante (${restaurant.name}) - diário`,
           })
         }
       } else if (freq === 'WEEKLY') {
@@ -243,37 +289,31 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
           const amount = slice.reduce((sum, _ev, idx) => sum + (daily[i + idx] ?? 0), 0)
           const last = slice[slice.length - 1]
           const first = slice[0]
-          await tx.payment.create({
-            data: {
-              eventId: last.id,
-              restaurantContractId: contract.id,
-              type: 'RESTAURANT_RECEIVABLE',
-              direction: 'RECEIVABLE',
-              amount,
-              status: 'PENDING',
-              dueDate: last.date,
-              note: `Restaurante (${restaurant.name}) - semanal ${first.dayKey} a ${last.dayKey}`,
-            },
+          await supabaseAdmin.from('Payment').insert({
+            eventId: last.id,
+            restaurantContractId: contract.id,
+            type: 'RESTAURANT_RECEIVABLE',
+            direction: 'RECEIVABLE',
+            amount,
+            status: 'PENDING',
+            dueDate: last.date.toISOString(),
+            note: `Restaurante (${restaurant.name}) - semanal ${first.dayKey} a ${last.dayKey}`,
           })
         }
       } else {
         const last = createdEvents[createdEvents.length - 1]
         const first = createdEvents[0]
-        await tx.payment.create({
-          data: {
-            eventId: last.id,
-            restaurantContractId: contract.id,
-            type: 'RESTAURANT_RECEIVABLE',
-            direction: 'RECEIVABLE',
-            amount: receivableTotalCents,
-            status: 'PENDING',
-            dueDate: last.date,
-            note: `Restaurante (${restaurant.name}) - mensal ${first.dayKey} a ${last.dayKey}`,
-          },
+        await supabaseAdmin.from('Payment').insert({
+          eventId: last.id,
+          restaurantContractId: contract.id,
+          type: 'RESTAURANT_RECEIVABLE',
+          direction: 'RECEIVABLE',
+          amount: receivableTotalCents,
+          status: 'PENDING',
+          dueDate: last.date.toISOString(),
+          note: `Restaurante (${restaurant.name}) - mensal ${first.dayKey} a ${last.dayKey}`,
         })
       }
-      return contract.id
-      })
     } catch (e) {
       if (e && typeof e === 'object' && 'digest' in e) throw e
       if (String(e).includes('CONFLICT')) redirect('/admin/restaurantes/new?error=conflict')

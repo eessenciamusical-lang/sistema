@@ -1,5 +1,5 @@
 import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { createDreReportPdf } from '@/lib/pdf/dre-report'
 import { renderToBuffer } from '@react-pdf/renderer'
 import ExcelJS from 'exceljs'
@@ -37,47 +37,57 @@ export async function GET(req: Request) {
   const fromDate = parseDateOnly(fromRaw)
   const toDate = parseDateOnly(toRaw)
 
-  const contracts = await prisma.contract.findMany({
-    where: {
-      status: 'SIGNED',
-      ...(fromDate || toDate
-        ? {
-            event: {
-              date: {
-                ...(fromDate ? { gte: toStartOfDay(fromDate) } : {}),
-                ...(toDate ? { lte: toEndOfDay(toDate) } : {}),
-              },
-            },
-          }
-        : {}),
-    },
-    include: { event: { include: { assignments: true } } },
-    orderBy: { event: { date: 'asc' } },
-  })
+  let evQuery = supabaseAdmin.from('Event').select('id,title,date').order('date', { ascending: true })
+  if (fromDate) evQuery = evQuery.gte('date', toStartOfDay(fromDate).toISOString())
+  if (toDate) evQuery = evQuery.lte('date', toEndOfDay(toDate).toISOString())
+  const { data: events, error: evErr } = await evQuery
+  if (evErr || !events) return new Response('Server error', { status: 500 })
 
-  const contractIds = contracts.map((c) => c.id)
-  const receivables =
-    contractIds.length === 0
-      ? []
-      : await prisma.payment.findMany({
-          where: { contractId: { in: contractIds }, direction: 'RECEIVABLE' },
-          select: { contractId: true, amount: true, status: true },
-        })
+  const eventIds = Array.from(new Set(events.map((e) => String(e.id))))
+  const { data: contracts, error: cErr } =
+    eventIds.length === 0
+      ? { data: [] as Array<{ id: string; eventId: string }>, error: null as null | unknown }
+      : await supabaseAdmin.from('Contract').select('id,eventId').eq('status', 'SIGNED').in('eventId', eventIds)
+  if (cErr || !contracts) return new Response('Server error', { status: 500 })
 
-  const receivedByContract = new Map<string, number>()
-  for (const p of receivables) {
-    if (!p.contractId) continue
-    if (p.status !== 'RECEIVED') continue
-    receivedByContract.set(p.contractId, (receivedByContract.get(p.contractId) ?? 0) + p.amount)
+  const contractIds = Array.from(new Set(contracts.map((c) => String(c.id))))
+
+  const { data: assignments } =
+    eventIds.length === 0
+      ? { data: [] as Array<{ eventId: string; costCents: number | null }> }
+      : await supabaseAdmin.from('Assignment').select('eventId,costCents').in('eventId', eventIds)
+  const bandCostByEventId = new Map<string, number>()
+  for (const a of assignments ?? []) {
+    const key = String(a.eventId)
+    bandCostByEventId.set(key, (bandCostByEventId.get(key) ?? 0) + (a.costCents ?? 0))
   }
 
+  const { data: receivables } =
+    contractIds.length === 0
+      ? { data: [] as Array<{ contractId: string | null; amount: number }> }
+      : await supabaseAdmin
+          .from('Payment')
+          .select('contractId,amount')
+          .eq('direction', 'RECEIVABLE')
+          .eq('status', 'RECEIVED')
+          .in('contractId', contractIds)
+  const receivedByContract = new Map<string, number>()
+  for (const p of receivables ?? []) {
+    if (!p.contractId) continue
+    const key = String(p.contractId)
+    receivedByContract.set(key, (receivedByContract.get(key) ?? 0) + (Number(p.amount) || 0))
+  }
+
+  const eventById = new Map(events.map((e) => [String(e.id), e]))
+
   const rows = contracts.map((c) => {
-    const bandCostCents = c.event.assignments.reduce((sum, a) => sum + (a.costCents ?? 0), 0)
-    const receivedCents = receivedByContract.get(c.id) ?? 0
+    const ev = eventById.get(String(c.eventId))
+    const bandCostCents = bandCostByEventId.get(String(c.eventId)) ?? 0
+    const receivedCents = receivedByContract.get(String(c.id)) ?? 0
     return {
-      contractId: c.id,
-      eventDate: c.event.date,
-      eventTitle: c.event.title,
+      contractId: String(c.id),
+      eventDate: ev?.date ? new Date(String(ev.date)) : new Date(),
+      eventTitle: ev?.title ? String(ev.title) : 'Evento',
       receivedCents,
       bandCostCents,
       profitCents: receivedCents - bandCostCents,

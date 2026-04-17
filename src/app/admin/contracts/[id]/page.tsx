@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { isDbAvailable } from '@/lib/db-availability'
 import { demoContracts, demoEvents } from '@/lib/demo-data'
 import { formatCurrencyBRL, formatDateBR } from '@/lib/format'
@@ -50,10 +50,69 @@ export default async function AdminContractDetailPage({ params }: Props) {
           },
         }
       })()
-    : await prisma.contract.findUnique({
-        where: { id },
-        include: { event: { include: { client: true, assignments: { include: { musician: { include: { user: true } } } } } } },
-      })
+    : await (async () => {
+        const { data: c, error: cErr } = await supabaseAdmin
+          .from('Contract')
+          .select('id,status,totalAmount,terms,eventId,signedAt')
+          .eq('id', id)
+          .maybeSingle()
+        if (cErr || !c) return null
+
+        const { data: ev, error: evErr } = await supabaseAdmin
+          .from('Event')
+          .select('id,title,date,clientId')
+          .eq('id', c.eventId)
+          .single()
+        if (evErr || !ev) return null
+
+        const { data: client } = ev.clientId
+          ? await supabaseAdmin.from('Client').select('id,name').eq('id', ev.clientId).maybeSingle()
+          : { data: null as null | { id: string; name: string } }
+
+        const { data: assignments } = await supabaseAdmin
+          .from('Assignment')
+          .select('id,roleName,costCents,musicianId')
+          .eq('eventId', ev.id)
+
+        const musicianIds = Array.from(new Set((assignments ?? []).map((a) => String(a.musicianId)).filter(Boolean)))
+        const { data: musicianProfiles } =
+          musicianIds.length === 0
+            ? { data: [] as Array<{ id: string; userId: string; instrument: string | null }> }
+            : await supabaseAdmin.from('MusicianProfile').select('id,userId,instrument').in('id', musicianIds)
+
+        const userIds = Array.from(new Set((musicianProfiles ?? []).map((m) => String(m.userId)).filter(Boolean)))
+        const { data: users } =
+          userIds.length === 0 ? { data: [] as Array<{ id: string; name: string }> } : await supabaseAdmin.from('User').select('id,name').in('id', userIds)
+
+        const userNameById = new Map((users ?? []).map((u) => [String(u.id), String(u.name)]))
+        const profileById = new Map((musicianProfiles ?? []).map((m) => [String(m.id), m]))
+
+        return {
+          id: String(c.id),
+          status: c.status as 'DRAFT' | 'SENT' | 'SIGNED' | 'CANCELLED',
+          totalAmount: Number(c.totalAmount) || 0,
+          terms: (c.terms as string | null) ?? '',
+          signedAt: c.signedAt ? new Date(String(c.signedAt)) : null,
+          event: {
+            title: String(ev.title),
+            date: new Date(String(ev.date)),
+            client: client ? { name: String(client.name) } : null,
+            assignments: (assignments ?? []).map((a) => {
+              const prof = profileById.get(String(a.musicianId))
+              const userId = prof?.userId ? String(prof.userId) : ''
+              return {
+                id: String(a.id),
+                roleName: (a.roleName as string | null) ?? null,
+                costCents: (a.costCents as number | null) ?? null,
+                musician: {
+                  instrument: (prof?.instrument as string | null) ?? null,
+                  user: { name: userNameById.get(userId) ?? 'Músico' },
+                },
+              }
+            }),
+          },
+        }
+      })()
 
   if (!contract) redirect('/admin/contracts')
 
@@ -77,17 +136,18 @@ export default async function AdminContractDetailPage({ params }: Props) {
     const cents = parseBRLToCents(parsed.data.total)
     if (cents === null) redirect(`/admin/contracts/${id}`)
 
-    const existing = await prisma.contract.findUnique({ where: { id }, select: { status: true, signedAt: true } })
+    const { data: existing } = await supabaseAdmin.from('Contract').select('signedAt').eq('id', id).maybeSingle()
+    const existingSignedAt = existing?.signedAt ? new Date(String(existing.signedAt)) : null
 
-    await prisma.contract.update({
-      where: { id },
-      data: {
+    await supabaseAdmin
+      .from('Contract')
+      .update({
         totalAmount: cents,
         status: parsed.data.status,
         terms: parsed.data.terms || '',
-        signedAt: parsed.data.status === 'SIGNED' && existing?.signedAt == null ? new Date() : existing?.signedAt ?? null,
-      },
-    })
+        signedAt: parsed.data.status === 'SIGNED' && existingSignedAt == null ? new Date().toISOString() : existingSignedAt?.toISOString() ?? null,
+      })
+      .eq('id', id)
 
     if (parsed.data.status === 'SIGNED') {
       await syncContractFinance(id)

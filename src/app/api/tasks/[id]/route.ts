@@ -1,5 +1,5 @@
 import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { isDbAvailable } from '@/lib/db-availability'
 import { demoTaskDelete, demoTaskUpdate } from '@/lib/demo-task-store'
 import { z } from 'zod'
@@ -64,8 +64,12 @@ export async function PATCH(req: Request, { params }: Props) {
     return Response.json({ task: updated.task })
   }
 
-  const task = await prisma.taskReminder.findUnique({ where: { id }, select: { id: true, userId: true, startAt: true } })
-  if (!task || task.userId !== session.user.id) return new Response('Not found', { status: 404 })
+  const { data: existingTask, error: existingErr } = await supabaseAdmin
+    .from('TaskReminder')
+    .select('id,userId,startAt')
+    .eq('id', id)
+    .single()
+  if (existingErr || !existingTask || existingTask.userId !== session.user.id) return new Response('Not found', { status: 404 })
 
   let startAt: Date | undefined
   if (parsed.data.startAt != null) {
@@ -76,26 +80,36 @@ export async function PATCH(req: Request, { params }: Props) {
     endOfDay.setDate(endOfDay.getDate() + 1)
     if (d < startOfDay || d >= endOfDay) return new Response('Bad request', { status: 400 })
 
-    const existing = await prisma.taskReminder.findUnique({
-      where: { userId_startAt: { userId: session.user.id, startAt: d } },
-      select: { id: true },
-    })
-    if (existing && existing.id !== id) return new Response('Conflict', { status: 409 })
+    const { data: conflict } = await supabaseAdmin
+      .from('TaskReminder')
+      .select('id')
+      .eq('userId', session.user.id)
+      .eq('startAt', d.toISOString())
+      .maybeSingle()
+    if (conflict && conflict.id !== id) return new Response('Conflict', { status: 409 })
     startAt = d
   }
 
-  const updated = await prisma.taskReminder.update({
-    where: { id },
-    data: {
-      ...(parsed.data.title != null ? { title: parsed.data.title.trim() } : {}),
-      ...(parsed.data.description !== undefined ? { description: parsed.data.description?.trim() || null } : {}),
-      ...(startAt ? { startAt } : {}),
-      ...(parsed.data.color != null ? { color: parsed.data.color } : {}),
-      ...(parsed.data.completed != null ? { completed: parsed.data.completed } : {}),
-    },
-  })
+  const patch: Record<string, unknown> = {}
+  if (parsed.data.title != null) patch.title = parsed.data.title.trim()
+  if (parsed.data.description !== undefined) patch.description = parsed.data.description?.trim() || null
+  if (startAt) patch.startAt = startAt.toISOString()
+  if (parsed.data.color != null) patch.color = parsed.data.color
+  if (parsed.data.completed != null) patch.completed = parsed.data.completed
 
-  return Response.json({ task: updated })
+  const { data: updated, error: updErr } = await supabaseAdmin
+    .from('TaskReminder')
+    .update(patch)
+    .eq('id', id)
+    .select('id,title,description,startAt,durationMin,color,completed')
+    .single()
+
+  if (updErr) {
+    if ((updErr as unknown as { code?: string }).code === '23505') return new Response('Conflict', { status: 409 })
+    return new Response('Server error', { status: 500 })
+  }
+
+  return Response.json({ task: { ...updated, startAt: new Date(String(updated.startAt)).toISOString() } })
 }
 
 export async function DELETE(_req: Request, { params }: Props) {
@@ -111,9 +125,14 @@ export async function DELETE(_req: Request, { params }: Props) {
     return new Response('ok')
   }
 
-  const task = await prisma.taskReminder.findUnique({ where: { id }, select: { id: true, userId: true } })
-  if (!task || task.userId !== session.user.id) return new Response('Not found', { status: 404 })
+  const { data: existingTask, error: existingErr } = await supabaseAdmin
+    .from('TaskReminder')
+    .select('id,userId')
+    .eq('id', id)
+    .single()
+  if (existingErr || !existingTask || existingTask.userId !== session.user.id) return new Response('Not found', { status: 404 })
 
-  await prisma.taskReminder.delete({ where: { id } })
+  const { error: delErr } = await supabaseAdmin.from('TaskReminder').delete().eq('id', id)
+  if (delErr) return new Response('Server error', { status: 500 })
   return new Response('ok')
 }

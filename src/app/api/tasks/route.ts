@@ -1,5 +1,5 @@
 import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { isDbAvailable } from '@/lib/db-availability'
 import { demoTaskCreate, demoTasksForDay } from '@/lib/demo-task-store'
 import { z } from 'zod'
@@ -40,10 +40,18 @@ export async function GET(req: Request) {
     return Response.json({ tasks })
   }
 
-  const tasks = await prisma.taskReminder.findMany({
-    where: { userId: session.user.id, startAt: { gte: start, lt: end } },
-    orderBy: { startAt: 'asc' },
-  })
+  const { data, error } = await supabaseAdmin
+    .from('TaskReminder')
+    .select('id,title,description,startAt,durationMin,color,completed')
+    .eq('userId', session.user.id)
+    .gte('startAt', start.toISOString())
+    .lt('startAt', end.toISOString())
+    .order('startAt', { ascending: true })
+  if (error) return new Response('Server error', { status: 500 })
+  const tasks = (data ?? []).map((t) => ({
+    ...t,
+    startAt: new Date(String(t.startAt)).toISOString(),
+  }))
 
   return Response.json({ tasks })
 }
@@ -88,22 +96,24 @@ export async function POST(req: Request) {
     return Response.json({ task: created.task })
   }
 
-  const existing = await prisma.taskReminder.findUnique({
-    where: { userId_startAt: { userId: session.user.id, startAt } },
-    select: { id: true },
-  })
-  if (existing) return new Response('Conflict', { status: 409 })
-
-  const task = await prisma.taskReminder.create({
-    data: {
+  const { data: created, error } = await supabaseAdmin
+    .from('TaskReminder')
+    .insert({
       userId: session.user.id,
       title: parsed.data.title.trim(),
       description: parsed.data.description?.trim() || null,
-      startAt,
+      startAt: startAt.toISOString(),
       durationMin: 30,
       color: parsed.data.color ?? 'blue',
-    },
-  })
+      completed: false,
+    })
+    .select('id,title,description,startAt,durationMin,color,completed')
+    .single()
 
-  return Response.json({ task })
+  if (error) {
+    if ((error as unknown as { code?: string }).code === '23505') return new Response('Conflict', { status: 409 })
+    return new Response('Server error', { status: 500 })
+  }
+
+  return Response.json({ task: { ...created, startAt: new Date(String(created.startAt)).toISOString() } })
 }

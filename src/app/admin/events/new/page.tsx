@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { supabaseAdmin } from '@/lib/db'
 import { parseDateTimeBR } from '@/lib/format'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
@@ -37,37 +37,39 @@ export default async function NewEventPage() {
 
     let clientId: string | null = null
     if (parsed.data.clientName) {
-      const client = await prisma.client.create({
-        data: {
+      const { data: client } = await supabaseAdmin
+        .from('Client')
+        .insert({
           name: parsed.data.clientName,
           email: parsed.data.clientEmail || null,
           phone: parsed.data.clientPhone || null,
-        },
-      })
-      clientId = client.id
+        })
+        .select('id')
+        .single()
+      clientId = client?.id ?? null
     }
 
     const when = parseDateTimeBR(parsed.data.date)
     if (!when) redirect('/admin/events/new')
 
-    const event = await prisma.event.create({
-      data: {
+    const { data: event } = await supabaseAdmin
+      .from('Event')
+      .insert({
         title: parsed.data.title,
-        date: when,
+        date: when.toISOString(),
+        eventType: 'WEDDING',
         locationName: parsed.data.locationName || null,
         address: parsed.data.address || null,
         city: parsed.data.city || null,
         state: parsed.data.state || null,
         mapUrl: parsed.data.mapUrl || null,
         clientId,
-        contract: {
-          create: {
-            totalAmount: 0,
-            terms: '',
-          },
-        },
-      },
-    })
+      })
+      .select('id')
+      .single()
+    if (!event) redirect('/admin/events/new')
+
+    await supabaseAdmin.from('Contract').insert({ eventId: event.id, totalAmount: 0, terms: '', status: 'DRAFT' })
 
     redirect(`/admin/events/${event.id}`)
   }
