@@ -2,6 +2,7 @@ import { signIn } from '@/auth'
 import { redirect } from 'next/navigation'
 import Image from 'next/image'
 import { z } from 'zod'
+import { AuthError } from 'next-auth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -32,8 +33,11 @@ export default async function LoginPage({ searchParams }: Props) {
         password: parsed.data.password,
         redirectTo: '/admin',
       })
-    } catch {
-      redirect('/login?error=auth')
+    } catch (e) {
+      if (e instanceof AuthError) {
+        redirect('/login?error=auth')
+      }
+      throw e
     }
   }
 
