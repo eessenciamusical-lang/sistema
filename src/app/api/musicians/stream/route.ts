@@ -8,7 +8,8 @@ export async function GET() {
   if (!session?.user) return new Response('Unauthorized', { status: 401 })
   if (!hasSupabaseEnv()) return new Response('Server not configured', { status: 500 })
 
-  const { data: profile } = await supabaseAdmin.from('MusicianProfile').select('id').eq('userId', session.user.id).maybeSingle()
+  const userId = session.user.id
+  const { data: profile } = await supabaseAdmin.from('MusicianProfile').select('id').eq('userId', userId).maybeSingle()
   if (!profile) return new Response('Not found', { status: 404 })
   const profileId = String(profile.id)
 
@@ -32,7 +33,7 @@ export async function GET() {
           const { data: acks } =
             assignmentIds.length === 0
               ? { data: [] as Array<{ assignmentId: string }> }
-              : await supabaseAdmin.from('NotificationAck').select('assignmentId').eq('userId', session.user.id).in('assignmentId', assignmentIds)
+              : await supabaseAdmin.from('NotificationAck').select('assignmentId').eq('userId', userId).in('assignmentId', assignmentIds)
           const acked = new Set((acks ?? []).map((a) => String(a.assignmentId)))
 
           const eventIds = Array.from(new Set((assignments ?? []).map((a) => String(a.eventId)).filter(Boolean)))
