@@ -9,14 +9,14 @@ const ITEMS = [
 
 export function TrustSection() {
   return (
-    <section className="border-t border-amber-200/10">
+    <section className="border-t border-amber-300/30 bg-[#f4f4f4]">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:py-18">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {ITEMS.map((item, i) => (
             <Reveal key={item.title} delayMs={i * 90}>
-              <div className="rounded-2xl border border-amber-200/15 bg-gradient-to-b from-zinc-900 to-zinc-950 p-6">
-                <div className="font-display text-xl text-amber-100">{item.title}</div>
-                <div className="mt-3 text-sm leading-7 text-zinc-300">{item.text}</div>
+              <div className="rounded-2xl border border-amber-300/35 bg-white p-6 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+                <div className="font-display text-xl text-amber-700">{item.title}</div>
+                <div className="mt-3 text-sm leading-7 text-zinc-700">{item.text}</div>
               </div>
             </Reveal>
           ))}
@@ -25,4 +25,3 @@ export function TrustSection() {
     </section>
   );
 }
-

@@ -39,66 +39,66 @@ export function ContactSection() {
   }
 
   return (
-    <section id="contato" className="border-t border-amber-200/10">
+    <section id="contato" className="border-t border-amber-300/30 bg-[#f5f5f5]">
       <div className="mx-auto max-w-7xl px-4 py-18 sm:py-24">
         <div className="grid gap-8 lg:grid-cols-[1fr_480px] lg:items-start">
           <div>
-            <p className="text-xs tracking-[0.22em] text-amber-200/70">SOLICITE SEU ORCAMENTO</p>
-            <h2 className="mt-3 font-display text-3xl text-zinc-50 sm:text-4xl">Vamos compor a noite de vocês</h2>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-300 sm:text-base">
+            <p className="text-xs tracking-[0.22em] text-amber-700">SOLICITE SEU ORCAMENTO</p>
+            <h2 className="mt-3 font-display text-3xl text-zinc-900 sm:text-4xl">Vamos compor a noite de vocês</h2>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-700 sm:text-base">
               Preencha o formulário e nossa equipe entra em contato em até 24 horas úteis com uma proposta personalizada para sua
               música ao vivo para casamento.
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-amber-200/15 bg-white/5 p-5 text-sm text-zinc-200">
+              <div className="rounded-2xl border border-amber-300/35 bg-white p-5 text-sm text-zinc-700">
                 Atendimento personalizado por consultor
               </div>
-              <div className="rounded-2xl border border-amber-200/15 bg-white/5 p-5 text-sm text-zinc-200">
+              <div className="rounded-2xl border border-amber-300/35 bg-white p-5 text-sm text-zinc-700">
                 Curadoria de repertório inclusa
               </div>
-              <div className="rounded-2xl border border-amber-200/15 bg-white/5 p-5 text-sm text-zinc-200">
+              <div className="rounded-2xl border border-amber-300/35 bg-white p-5 text-sm text-zinc-700">
                 Formações flexíveis · do solo à orquestra
               </div>
-              <div className="rounded-2xl border border-amber-200/15 bg-white/5 p-5 text-sm text-zinc-200">
+              <div className="rounded-2xl border border-amber-300/35 bg-white p-5 text-sm text-zinc-700">
                 Equipe própria de sonorização
               </div>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-amber-200/15 bg-gradient-to-b from-zinc-900 to-zinc-950 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.35)] sm:p-8">
+          <div className="rounded-3xl border border-amber-300/35 bg-white p-6 shadow-[0_18px_45px_rgba(0,0,0,0.12)] sm:p-8">
             <div className="grid gap-4">
               <label className="grid gap-2">
-                <span className="text-sm text-zinc-200">Nome</span>
+                <span className="text-sm text-zinc-700">Nome</span>
                 <input
                   value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  className="h-11 rounded-xl bg-black/35 px-4 text-zinc-50 outline-none ring-1 ring-amber-200/10 focus:ring-2 focus:ring-amber-200/35"
+                  className="h-11 rounded-xl bg-zinc-100 px-4 text-zinc-900 outline-none ring-1 ring-amber-300/20 focus:ring-2 focus:ring-amber-400/45"
                 />
               </label>
               <label className="grid gap-2">
-                <span className="text-sm text-zinc-200">Email</span>
+                <span className="text-sm text-zinc-700">Email</span>
                 <input
                   value={form.email}
                   onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                  className="h-11 rounded-xl bg-black/35 px-4 text-zinc-50 outline-none ring-1 ring-amber-200/10 focus:ring-2 focus:ring-amber-200/35"
+                  className="h-11 rounded-xl bg-zinc-100 px-4 text-zinc-900 outline-none ring-1 ring-amber-300/20 focus:ring-2 focus:ring-amber-400/45"
                 />
               </label>
               <label className="grid gap-2">
-                <span className="text-sm text-zinc-200">WhatsApp (opcional)</span>
+                <span className="text-sm text-zinc-700">WhatsApp (opcional)</span>
                 <input
                   value={form.phone}
                   onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  className="h-11 rounded-xl bg-black/35 px-4 text-zinc-50 outline-none ring-1 ring-amber-200/10 focus:ring-2 focus:ring-amber-200/35"
+                  className="h-11 rounded-xl bg-zinc-100 px-4 text-zinc-900 outline-none ring-1 ring-amber-300/20 focus:ring-2 focus:ring-amber-400/45"
                 />
               </label>
               <label className="grid gap-2">
-                <span className="text-sm text-zinc-200">Mensagem</span>
+                <span className="text-sm text-zinc-700">Mensagem</span>
                 <textarea
                   value={form.message}
                   onChange={(e) => setForm((p) => ({ ...p, message: e.target.value }))}
                   rows={5}
-                  className="rounded-xl bg-black/35 px-4 py-3 text-zinc-50 outline-none ring-1 ring-amber-200/10 focus:ring-2 focus:ring-amber-200/35"
+                  className="rounded-xl bg-zinc-100 px-4 py-3 text-zinc-900 outline-none ring-1 ring-amber-300/20 focus:ring-2 focus:ring-amber-400/45"
                 />
               </label>
 
@@ -111,16 +111,16 @@ export function ContactSection() {
                 {loading ? "Enviando..." : "Enviar"}
               </button>
 
-              {done === "ok" ? <div className="text-sm text-amber-100/90">Recebido! Vamos retornar em breve.</div> : null}
+              {done === "ok" ? <div className="text-sm text-amber-700">Recebido! Vamos retornar em breve.</div> : null}
               {done === "error" ? (
-                <div className="text-sm text-amber-100/90">
+                <div className="text-sm text-amber-700">
                   Não foi possível enviar agora. Você pode usar o formulário de Orçamento.
                 </div>
               ) : null}
 
               <a
                 href="/orcamento"
-                className="inline-flex h-11 items-center justify-center rounded-xl border border-amber-200/20 bg-white/5 px-6 text-sm text-zinc-100 transition hover:bg-white/10"
+                className="inline-flex h-11 items-center justify-center rounded-xl border border-amber-300/40 bg-amber-50 px-6 text-sm text-zinc-800 transition hover:bg-amber-100"
               >
                 Abrir formulário completo de orçamento
               </a>
@@ -131,4 +131,3 @@ export function ContactSection() {
     </section>
   );
 }
-

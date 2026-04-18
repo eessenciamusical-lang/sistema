@@ -25,24 +25,24 @@ const FAQ = [
 
 export function FaqSection() {
   return (
-    <section id="faq" className="border-t border-amber-200/10">
+    <section id="faq" className="border-t border-amber-300/30 bg-[#efefef]">
       <div className="mx-auto max-w-7xl px-4 py-18 sm:py-24">
         <Reveal>
-          <p className="text-xs tracking-[0.22em] text-amber-200/70">PERGUNTAS FREQUENTES</p>
-          <h2 className="mt-3 font-display text-3xl text-zinc-50 sm:text-4xl">Tudo o que vocês precisam saber</h2>
+          <p className="text-xs tracking-[0.22em] text-amber-700">PERGUNTAS FREQUENTES</p>
+          <h2 className="mt-3 font-display text-3xl text-zinc-900 sm:text-4xl">Tudo o que vocês precisam saber</h2>
         </Reveal>
 
         <div className="mt-10 grid gap-4">
           {FAQ.map((f, i) => (
             <Reveal key={f.q} delayMs={i * 80}>
-              <details className="group rounded-2xl border border-amber-200/15 bg-white/5 p-6 open:bg-white/7">
+              <details className="group rounded-2xl border border-amber-300/35 bg-white p-6 shadow-[0_6px_20px_rgba(0,0,0,0.07)] open:bg-amber-50/50">
                 <summary className="cursor-pointer list-none select-none">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="font-display text-xl text-amber-100">{f.q}</div>
-                    <div className="mt-1 text-amber-200/70 transition group-open:rotate-45">+</div>
+                    <div className="font-display text-xl text-amber-700">{f.q}</div>
+                    <div className="mt-1 text-amber-700/70 transition group-open:rotate-45">+</div>
                   </div>
                 </summary>
-                <div className="mt-4 text-sm leading-7 text-zinc-300">{f.a}</div>
+                <div className="mt-4 text-sm leading-7 text-zinc-700">{f.a}</div>
               </details>
             </Reveal>
           ))}
