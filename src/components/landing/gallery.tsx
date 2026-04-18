@@ -22,6 +22,16 @@ const GALLERY = [
     alt: "Banda com iluminacao cenica dourada",
     span: "sm:col-span-2",
   },
+  {
+    src: "https://images.unsplash.com/photo-1487180144351-b8472da7d491?auto=format&fit=crop&w=1200&q=80",
+    alt: "Detalhe de instrumento e maos em performance",
+    span: "",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1521337706264-a414f153a5a6?auto=format&fit=crop&w=1200&q=80",
+    alt: "Equipe musical em palco com iluminacao suave",
+    span: "",
+  },
 ];
 
 export function GallerySection() {
@@ -53,4 +63,3 @@ export function GallerySection() {
     </section>
   );
 }
-

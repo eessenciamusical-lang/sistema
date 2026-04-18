@@ -1,9 +1,20 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { LuxuryHero } from '@/components/landing/hero'
+import { TrustSection } from '@/components/landing/trust'
 import { ServicesSection } from '@/components/landing/services'
 import { GallerySection } from '@/components/landing/gallery'
+import { ProcessSection } from '@/components/landing/process'
+import { RepertoireSection } from '@/components/landing/repertoire'
+import { SoundSection } from '@/components/landing/sound'
+import { FaqSection } from '@/components/landing/faq'
 import { FinalCtaSection } from '@/components/landing/cta'
+
+export const metadata = {
+  title: 'Essência Musical — Música ao Vivo para Casamentos | Sistema Seven',
+  description:
+    'Banda para casamento, música ao vivo para cerimônia e recepção, formações sob medida, repertório personalizado e sonorização profissional. Solicite um orçamento.',
+}
 
 export default function Home() {
   return (
@@ -20,6 +31,12 @@ export default function Home() {
             <a className="rounded-lg px-3 py-2 text-zinc-200 transition hover:bg-white/5 hover:text-white" href="#galeria">
               Galeria
             </a>
+            <a className="hidden rounded-lg px-3 py-2 text-zinc-200 transition hover:bg-white/5 hover:text-white sm:inline-flex" href="#processo">
+              Processo
+            </a>
+            <a className="hidden rounded-lg px-3 py-2 text-zinc-200 transition hover:bg-white/5 hover:text-white sm:inline-flex" href="#faq">
+              FAQ
+            </a>
             <Link className="rounded-lg px-3 py-2 text-zinc-200 transition hover:bg-white/5 hover:text-white" href="/orcamento">
               Orçamento
             </Link>
@@ -32,8 +49,13 @@ export default function Home() {
 
       <main>
         <LuxuryHero />
+        <TrustSection />
         <ServicesSection />
         <GallerySection />
+        <ProcessSection />
+        <RepertoireSection />
+        <SoundSection />
+        <FaqSection />
         <FinalCtaSection />
       </main>
 
