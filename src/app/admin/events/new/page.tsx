@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/db'
 import { parseDateTimeBR } from '@/lib/format'
+import { newId } from '@/lib/ids'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 
@@ -40,6 +41,7 @@ export default async function NewEventPage() {
       const { data: client } = await supabaseAdmin
         .from('Client')
         .insert({
+          id: newId(),
           name: parsed.data.clientName,
           email: parsed.data.clientEmail || null,
           phone: parsed.data.clientPhone || null,
@@ -55,6 +57,7 @@ export default async function NewEventPage() {
     const { data: event } = await supabaseAdmin
       .from('Event')
       .insert({
+        id: newId(),
         title: parsed.data.title,
         date: when.toISOString(),
         eventType: 'WEDDING',
@@ -69,7 +72,7 @@ export default async function NewEventPage() {
       .single()
     if (!event) redirect('/admin/events/new')
 
-    await supabaseAdmin.from('Contract').insert({ eventId: event.id, totalAmount: 0, terms: '', status: 'DRAFT' })
+    await supabaseAdmin.from('Contract').insert({ id: newId(), eventId: event.id, totalAmount: 0, terms: '', status: 'DRAFT' })
 
     redirect(`/admin/events/${event.id}`)
   }

@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { supabaseAdmin } from '@/lib/db'
 import { isDbAvailable } from '@/lib/db-availability'
 import { demoTaskCreate, demoTasksForDay } from '@/lib/demo-task-store'
+import { newId } from '@/lib/ids'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
@@ -99,6 +100,7 @@ export async function POST(req: Request) {
   const { data: created, error } = await supabaseAdmin
     .from('TaskReminder')
     .insert({
+      id: newId(),
       userId: session.user.id,
       title: parsed.data.title.trim(),
       description: parsed.data.description?.trim() || null,

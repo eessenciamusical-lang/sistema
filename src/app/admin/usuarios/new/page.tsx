@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { auditLog } from '@/lib/audit'
 import { hasSupabaseServiceRole, supabaseAdmin } from '@/lib/db'
+import { newId } from '@/lib/ids'
 import bcrypt from 'bcryptjs'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
@@ -55,6 +56,7 @@ export default async function AdminUsuariosNewPage({ searchParams }: PageProps) 
     const { data: created, error } = await supabaseAdmin
       .from('User')
       .insert({
+        id: newId(),
         name: parsed.data.name,
         email: parsed.data.email,
         login,

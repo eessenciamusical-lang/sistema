@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/db'
 import { parseDateBR } from '@/lib/format'
+import { newId } from '@/lib/ids'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
@@ -154,6 +155,7 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
           await supabaseAdmin
             .from('Restaurant')
             .insert({
+              id: newId(),
               name: parsed.data.restaurantName,
               address: parsed.data.address,
               city: parsed.data.city || null,
@@ -168,6 +170,7 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
       const { data: contract } = await supabaseAdmin
         .from('RestaurantContract')
         .insert({
+          id: newId(),
           restaurantId: restaurant.id,
           startDate: s.toISOString(),
           endDate: e.toISOString(),
@@ -214,6 +217,7 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
         const { data: event } = await supabaseAdmin
           .from('Event')
           .insert({
+            id: newId(),
             title: `Restaurante: ${restaurant.name}`,
             date: when.toISOString(),
             eventType: 'RESTAURANT',
@@ -237,6 +241,7 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
           const { data: assignment } = await supabaseAdmin
             .from('Assignment')
             .insert({
+              id: newId(),
               eventId: event.id,
               musicianId: sel.musicianId,
               status: 'CONFIRMED',
@@ -248,6 +253,7 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
           if (!assignment) throw new Error('ASSIGNMENT')
 
           await supabaseAdmin.from('Payment').insert({
+            id: newId(),
             eventId: event.id,
             restaurantContractId: contract.id,
             type: 'MUSICIAN_PAYABLE',
@@ -272,6 +278,7 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
         for (let i = 0; i < createdEvents.length; i++) {
           const ev = createdEvents[i]
           await supabaseAdmin.from('Payment').insert({
+            id: newId(),
             eventId: ev.id,
             restaurantContractId: contract.id,
             type: 'RESTAURANT_RECEIVABLE',
@@ -290,6 +297,7 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
           const last = slice[slice.length - 1]
           const first = slice[0]
           await supabaseAdmin.from('Payment').insert({
+            id: newId(),
             eventId: last.id,
             restaurantContractId: contract.id,
             type: 'RESTAURANT_RECEIVABLE',
@@ -304,6 +312,7 @@ export default async function NewRestaurantContractPage({ searchParams }: PagePr
         const last = createdEvents[createdEvents.length - 1]
         const first = createdEvents[0]
         await supabaseAdmin.from('Payment').insert({
+          id: newId(),
           eventId: last.id,
           restaurantContractId: contract.id,
           type: 'RESTAURANT_RECEIVABLE',

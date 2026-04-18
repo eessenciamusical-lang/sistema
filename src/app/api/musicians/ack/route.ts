@@ -1,5 +1,6 @@
 import { auth } from '@/auth'
 import { hasSupabaseEnv, supabaseAdmin } from '@/lib/db'
+import { newId } from '@/lib/ids'
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -8,7 +9,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null)
   if (!body?.assignmentId) return new Response('Bad request', { status: 400 })
   await supabaseAdmin.from('NotificationAck').upsert(
-    { userId: session.user.id, assignmentId: String(body.assignmentId), readAt: new Date().toISOString() },
+    { id: newId(), userId: session.user.id, assignmentId: String(body.assignmentId), readAt: new Date().toISOString() },
     { onConflict: 'userId,assignmentId' },
   )
   return new Response('ok')

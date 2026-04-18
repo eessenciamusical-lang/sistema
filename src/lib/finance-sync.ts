@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/db'
+import { newId } from '@/lib/ids'
 
 export async function syncContractFinance(contractId: string) {
   const { data: contract, error: contractErr } = await supabaseAdmin
@@ -52,6 +53,7 @@ export async function syncContractFinance(contractId: string) {
       .eq('id', existingReceivable.id)
   } else {
     await supabaseAdmin.from('Payment').insert({
+      id: newId(),
       eventId: contract.eventId,
       contractId: contract.id,
       type: 'CONTRACT_RECEIVABLE',
@@ -100,6 +102,7 @@ export async function syncContractFinance(contractId: string) {
     }
 
     await supabaseAdmin.from('Payment').insert({
+      id: newId(),
       eventId: contract.eventId,
       assignmentId,
       type: 'MUSICIAN_PAYABLE',

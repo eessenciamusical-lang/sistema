@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { supabaseAdmin } from '@/lib/db'
+import { newId } from '@/lib/ids'
 
 export async function auditLog(input: {
   actorUserId: string
@@ -11,6 +12,7 @@ export async function auditLog(input: {
 }) {
   try {
     await supabaseAdmin.from('AuditLog').insert({
+      id: newId(),
       actorUserId: input.actorUserId,
       action: input.action,
       targetUserId: input.targetUserId ?? null,
@@ -20,4 +22,3 @@ export async function auditLog(input: {
     })
   } catch {}
 }
-

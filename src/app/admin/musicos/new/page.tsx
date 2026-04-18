@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/db'
+import { newId } from '@/lib/ids'
 import bcrypt from 'bcryptjs'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -67,6 +68,7 @@ export default async function NewMusicianPage({ searchParams }: Props) {
       const { data: user, error: userErr } = await supabaseAdmin
         .from('User')
         .insert({
+          id: newId(),
           login: parsed.data.login,
           email: null,
           name: parsed.data.name,
@@ -78,6 +80,7 @@ export default async function NewMusicianPage({ searchParams }: Props) {
       if (userErr || !user) redirect('/admin/musicos/new?error=server')
 
       const { error: profileErr } = await supabaseAdmin.from('MusicianProfile').insert({
+        id: newId(),
         userId: user.id,
         phone: parsed.data.phone || null,
         instrument: parsed.data.instrument || null,
