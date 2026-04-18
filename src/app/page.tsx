@@ -8,6 +8,7 @@ import { ProcessSection } from '@/components/landing/process'
 import { RepertoireSection } from '@/components/landing/repertoire'
 import { SoundSection } from '@/components/landing/sound'
 import { FaqSection } from '@/components/landing/faq'
+import { ContactSection } from '@/components/landing/contact'
 import { FinalCtaSection } from '@/components/landing/cta'
 
 export const metadata = {
@@ -37,8 +38,11 @@ export default function Home() {
             <a className="hidden rounded-lg px-3 py-2 text-zinc-200 transition hover:bg-white/5 hover:text-white sm:inline-flex" href="#faq">
               FAQ
             </a>
-            <Link className="rounded-lg px-3 py-2 text-zinc-200 transition hover:bg-white/5 hover:text-white" href="/orcamento">
+            <a className="hidden rounded-lg px-3 py-2 text-zinc-200 transition hover:bg-white/5 hover:text-white sm:inline-flex" href="#contato">
               Orçamento
+            </a>
+            <Link className="rounded-lg px-3 py-2 text-zinc-200 transition hover:bg-white/5 hover:text-white" href="/orcamento">
+              Formulário
             </Link>
             <Link className="gold-gradient rounded-lg px-3 py-2 font-medium text-zinc-950 transition hover:scale-[1.02] hover:brightness-110" href="/login">
               Área interna
@@ -56,6 +60,7 @@ export default function Home() {
         <RepertoireSection />
         <SoundSection />
         <FaqSection />
+        <ContactSection />
         <FinalCtaSection />
       </main>
 

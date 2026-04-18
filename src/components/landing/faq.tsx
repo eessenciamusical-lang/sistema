@@ -28,11 +28,8 @@ export function FaqSection() {
     <section id="faq" className="border-t border-amber-200/10">
       <div className="mx-auto max-w-7xl px-4 py-18 sm:py-24">
         <Reveal>
-          <p className="text-xs tracking-[0.22em] text-amber-200/70">FAQ</p>
-          <h2 className="mt-3 font-display text-3xl text-zinc-50 sm:text-4xl">Perguntas frequentes sobre banda para casamento</h2>
-          <p className="mt-4 max-w-3xl text-sm leading-7 text-zinc-300 sm:text-base">
-            Respostas objetivas para ajudar na escolha da musica ao vivo e da formacao ideal para cerimonia, recepcao e festa.
-          </p>
+          <p className="text-xs tracking-[0.22em] text-amber-200/70">PERGUNTAS FREQUENTES</p>
+          <h2 className="mt-3 font-display text-3xl text-zinc-50 sm:text-4xl">Tudo o que vocês precisam saber</h2>
         </Reveal>
 
         <div className="mt-10 grid gap-4">
@@ -54,4 +51,3 @@ export function FaqSection() {
     </section>
   );
 }
-
